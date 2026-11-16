@@ -51,7 +51,6 @@
         }
         #storyContainer p.active-chunk { background: rgba(16, 185, 129, 0.15); border-left-color: var(--accent); color: #fff; }
         
-        /* Floating Reader Dock (Giống style báo chí hiện đại) */
         .player-dock {
             background: var(--surface); border-top: 1px solid var(--border);
             padding: 12px 16px calc(12px + env(safe-area-inset-bottom)) 16px;
@@ -94,7 +93,7 @@
         <div style="text-align:center; padding: 40px 16px; color: var(--text-muted); font-family: sans-serif;">
             <div style="font-size: 40px; margin-bottom: 12px;">🎧</div>
             <div style="font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc tự động toàn văn bản</div>
-            <div style="font-size: 13px;">Bấm <b>＋ Mở file</b> để tải truyện/báo, sau đó bấm nút <b>Nghe toàn bộ</b> ở bên dưới.</div>
+            <div style="font-size: 13px;">Bấm <b>＋ Mở file</b> để tải truyện/báo, sau đó bấm nút <b>🔊 Nghe trang</b> ở bên dưới.</div>
         </div>
     </main>
 
@@ -115,7 +114,7 @@
             </select>
 
             <button class="auto-play-btn" id="playToggleBtn" onclick="toggleAutoPlay()">
-                ▶ Nghe toàn bộ chương (Auto-play)
+                🔊 Nghe trang (Auto-play)
             </button>
         </div>
     </footer>
@@ -228,7 +227,7 @@
                 document.getElementById("chapterBar").style.display = "flex";
 
                 renderChapter(0, 0);
-                status.textContent = `✅ Đã tải file xong! Bấm "Nghe toàn bộ chương" để bắt đầu.`;
+                status.textContent = `✅ Đã tải file xong! Bấm "🔊 Nghe trang" để bắt đầu.`;
             } catch (err) {
                 status.textContent = `❌ Lỗi đọc file: ${err.message}`;
             }
@@ -261,7 +260,7 @@
             playSessionId++;
             isPlaying = false;
             currentAudio.pause();
-            playToggleBtn.innerHTML = "▶ Nghe toàn bộ chương (Auto-play)";
+            playToggleBtn.innerHTML = "🔊 Nghe trang (Auto-play)";
             status.textContent = msg;
             progressFill.style.width = "0%";
         }
@@ -281,7 +280,7 @@
             playSessionId++;
             const localSession = playSessionId;
             isPlaying = true;
-            playToggleBtn.innerHTML = "■ Dừng đọc (Auto-playing)";
+            playToggleBtn.innerHTML = "■ Dừng đọc (Đang nghe trang)";
 
             await syncTunnelUrlIfNeeded();
 
@@ -340,7 +339,6 @@
 
                 currentAudio.onerror = () => resolve();
 
-                // Theo dõi nếu bấm nút dừng giữa chừng
                 const checkInterval = setInterval(() => {
                     if (!isPlaying || session !== playSessionId) {
                         clearInterval(checkInterval);

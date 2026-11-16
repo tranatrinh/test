@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI Story Reader - Auto Play</title>
+    <title>AI Story Reader - Browser TTS</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -58,8 +58,6 @@
         }
         .status-row { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-muted); gap: 8px; }
         #status { color: #fcd34d; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .progress-track { width: 100%; height: 4px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
-        .progress-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.1s linear; }
         .controls-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
         
         .auto-play-btn {
@@ -75,9 +73,8 @@
 <body>
 
     <header>
-        <div class="brand">📖 AI Auto-Reader</div>
+        <div class="brand">📖 Web Reader (Native TTS)</div>
         <div class="header-actions">
-            <button class="pill-btn" id="serverBtn" onclick="changeServerUrl()">🔗 Server</button>
             <label class="pill-btn pill-accent">
                 ＋ Mở file (.txt/.epub)
                 <input type="file" id="fileInput" accept=".txt,.epub" style="display:none;" onclick="this.value=null;">
@@ -92,8 +89,8 @@
     <main id="storyContainer">
         <div style="text-align:center; padding: 40px 16px; color: var(--text-muted); font-family: sans-serif;">
             <div style="font-size: 40px; margin-bottom: 12px;">🎧</div>
-            <div style="font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc tự động toàn văn bản</div>
-            <div style="font-size: 13px;">Bấm <b>＋ Mở file</b> để tải truyện/báo, sau đó bấm nút <b>🔊 Nghe trang</b> ở bên dưới.</div>
+            <div style="font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc trang trực tiếp</div>
+            <div style="font-size: 13px;">Bấm <b>＋ Mở file</b>, sau đó bấm nút <b>🔊 Nghe trang</b> ở bên dưới để đọc liên tục từ đầu đến cuối.</div>
         </div>
     </main>
 
@@ -102,88 +99,35 @@
             <span id="status">Sẵn sàng!</span>
             <span id="chunkCounter">0 / 0</span>
         </div>
-        <div class="progress-track">
-            <div class="progress-fill" id="progressFill"></div>
-        </div>
         <div class="controls-row">
             <select id="speedSelect" class="dock-select" style="max-width:70px;">
                 <option value="0.8">0.8x</option>
                 <option value="1.0" selected>1.0x</option>
                 <option value="1.2">1.2x</option>
                 <option value="1.5">1.5x</option>
+                <option value="2.0">2.0x</option>
             </select>
 
-            <button class="auto-play-btn" id="playToggleBtn" onclick="toggleAutoPlay()">
+            <button class="auto-play-btn" id="playToggleBtn" onclick="toggleSpeechPlay()">
                 🔊 Nghe trang (Auto-play)
             </button>
         </div>
     </footer>
 
     <script>
-        let SERVER_BASE = localStorage.getItem("my_tts_server_url") || "http://localhost:5000";
-        const serverBtn = document.getElementById('serverBtn');
-
-        function updateServerBadge() {
-            const isTunnel = SERVER_BASE.includes("trycloudflare.com");
-            serverBtn.textContent = isTunnel ? "● Tunnel" : "🔗 Server";
-            localStorage.setItem("my_tts_server_url", SERVER_BASE);
-        }
-
-        async function syncTunnelUrlIfNeeded() {
-            const urlsToTry = [
-                "https://api.github.com/repos/tranatrinh/web-story-reader/contents/tunnel.json?ref=main&_=" + Date.now(),
-                "./tunnel.json?t=" + Date.now(),
-                "https://raw.githubusercontent.com/tranatrinh/web-story-reader/main/tunnel.json?t=" + Date.now()
-            ];
-
-            for (const url of urlsToTry) {
-                try {
-                    const headers = url.includes("api.github.com") ? { "Accept": "application/vnd.github.raw+json" } : {};
-                    const res = await fetch(url, { cache: "no-store", headers });
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data && data.url && data.url.trim()) {
-                            SERVER_BASE = data.url.trim();
-                            updateServerBadge();
-                            return true;
-                        }
-                    }
-                } catch (e) {}
-            }
-            return false;
-        }
-
-        async function changeServerUrl() {
-            await syncTunnelUrlIfNeeded();
-            let newUrl = prompt("Nhập link Server / Cloudflare Tunnel:", SERVER_BASE);
-            if (newUrl !== null && newUrl.trim() !== "") {
-                SERVER_BASE = newUrl.trim();
-                updateServerBadge();
-                status.textContent = `🔗 Đã kết nối: ${SERVER_BASE}`;
-            }
-        }
-
-        (async () => {
-            await syncTunnelUrlIfNeeded();
-            updateServerBadge();
-        })();
-
         const fileInput = document.getElementById('fileInput');
         const storyContainer = document.getElementById('storyContainer');
         const status = document.getElementById('status');
         const chapterSelect = document.getElementById('chapterSelect');
         const playToggleBtn = document.getElementById('playToggleBtn');
         const chunkCounter = document.getElementById('chunkCounter');
-        const progressFill = document.getElementById('progressFill');
         const speedSelect = document.getElementById('speedSelect');
 
         let chapters = [];
         let currentChapterIndex = 0;
         let chunks = [];
         let currentChunkIndex = 0;
-        let isPlaying = false;
-        let currentAudio = new Audio();
-        let playSessionId = 0;
+        let isSpeaking = false;
 
         function processRawTextToChunks(rawText) {
             const lines = rawText.split(/\r?\n/);
@@ -199,7 +143,7 @@
             const file = e.target.files.item(0);
             if (!file) return;
 
-            stopAutoPlay("⏳ Đang tải file...");
+            stopSpeech("⏳ Đang tải file...");
             try {
                 if (file.name.toLowerCase().endsWith('.txt')) {
                     const text = await file.text();
@@ -248,105 +192,81 @@
             highlightParagraph(currentChunkIndex);
         }
 
-        function toggleAutoPlay() {
-            if (isPlaying) {
-                stopAutoPlay("⏸ Đã tạm dừng.");
+        function toggleSpeechPlay() {
+            if (!('speechSynthesis' in window)) {
+                alert("Trình duyệt của bạn không hỗ trợ đọc giọng nói!");
+                return;
+            }
+
+            if (isSpeaking) {
+                window.speechSynthesis.cancel();
+                stopSpeech("⏸ Đã tạm dừng.");
             } else {
-                startAutoPlay(currentChunkIndex);
+                startSpeechPlay(currentChunkIndex);
             }
         }
 
-        function stopAutoPlay(msg = "⏹ Đã dừng.") {
-            playSessionId++;
-            isPlaying = false;
-            currentAudio.pause();
+        function stopSpeech(msg = "⏹ Đã dừng.") {
+            isSpeaking = false;
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
             playToggleBtn.innerHTML = "🔊 Nghe trang (Auto-play)";
             status.textContent = msg;
-            progressFill.style.width = "0%";
         }
 
-        async function jumpToChunk(idx) {
-            stopAutoPlay();
+        function jumpToChunk(idx) {
+            stopSpeech();
             currentChunkIndex = idx;
-            startAutoPlay(currentChunkIndex);
+            startSpeechPlay(currentChunkIndex);
         }
 
-        async function startAutoPlay(startIndex) {
+        function startSpeechPlay(startIndex) {
             if (chunks.length === 0) {
                 alert("Vui lòng mở file truyện/báo trước!");
                 return;
             }
 
-            playSessionId++;
-            const localSession = playSessionId;
-            isPlaying = true;
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+
+            isSpeaking = true;
             playToggleBtn.innerHTML = "■ Dừng đọc (Đang nghe trang)";
+            currentChunkIndex = startIndex;
 
-            await syncTunnelUrlIfNeeded();
-
-            while (isPlaying && localSession === playSessionId && currentChunkIndex < chunks.length) {
-                const idx = currentChunkIndex;
-                highlightParagraph(idx);
-                status.textContent = `🔊 Đang phát đoạn ${idx + 1} / ${chunks.length}`;
-
-                const text = chunks[idx];
-                let audioUrl = "";
-
-                try {
-                    const res = await fetch(SERVER_BASE.replace(/\/$/, "") + "/tts", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ text: text, voice: "default" })
-                    });
-                    if (!res.ok) throw new Error("Lỗi Server TTS");
-                    const blob = await res.blob();
-                    audioUrl = URL.createObjectURL(blob);
-                } catch (e) {
-                    status.textContent = `⚠️ Lỗi kết nối Server, đang thử lại...`;
-                    await new Promise(r => setTimeout(r, 1500));
-                    continue;
-                }
-
-                if (!isPlaying || localSession !== playSessionId) break;
-
-                await playAudioChunk(audioUrl, localSession);
-                if (!isPlaying || localSession !== playSessionId) break;
-
-                currentChunkIndex++;
-            }
-
-            if (isPlaying && localSession === playSessionId) {
-                stopAutoPlay("✅ Đã đọc xong toàn bộ văn bản!");
-            }
+            playNextUtterance(currentChunkIndex);
         }
 
-        function playAudioChunk(url, session) {
-            return new Promise((resolve) => {
-                currentAudio.src = url;
-                currentAudio.playbackRate = parseFloat(speedSelect.value);
-                currentAudio.play().catch(() => resolve());
+        function playNextUtterance(idx) {
+            if (!isSpeaking || idx >= chunks.length) {
+                if (idx >= chunks.length) {
+                    stopSpeech("✅ Đã đọc xong toàn bộ văn bản!");
+                }
+                return;
+            }
 
-                currentAudio.ontimeupdate = () => {
-                    if (!currentAudio.duration) return;
-                    const ratio = Math.min(1, currentAudio.currentTime / currentAudio.duration);
-                    progressFill.style.width = `${ratio * 100}%`;
-                };
+            currentChunkIndex = idx;
+            highlightParagraph(idx);
+            status.textContent = `🔊 Đang đọc đoạn ${idx + 1} / ${chunks.length}`;
 
-                currentAudio.onended = () => {
-                    progressFill.style.width = "0%";
-                    resolve();
-                };
+            const utterance = new SpeechSynthesisUtterance(chunks[idx]);
+            utterance.lang = 'vi-VN';
+            utterance.rate = parseFloat(speedSelect.value);
 
-                currentAudio.onerror = () => resolve();
+            utterance.onend = () => {
+                if (isSpeaking) {
+                    playNextUtterance(currentChunkIndex + 1);
+                }
+            };
 
-                const checkInterval = setInterval(() => {
-                    if (!isPlaying || session !== playSessionId) {
-                        clearInterval(checkInterval);
-                        currentAudio.pause();
-                        resolve();
-                    }
-                }, 200);
-            });
+            utterance.onerror = () => {
+                if (isSpeaking) {
+                    playNextUtterance(currentChunkIndex + 1);
+                }
+            };
+
+            window.speechSynthesis.speak(utterance);
         }
 
         function highlightParagraph(index) {

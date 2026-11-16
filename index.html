@@ -64,8 +64,9 @@
         }
         #storyContainer h1.chap-heading {
             font-family: var(--reader-font); font-size: 1.6em; font-weight: 700; line-height: 1.3;
-            text-align: center; color: var(--text); margin: 18px 0 32px 0; padding: 0 8px;
+            text-align: center; color: var(--text); margin: 18px 0 32px 0; padding: 0 8px; cursor: pointer; transition: opacity 0.2s;
         }
+        #storyContainer h1.chap-heading.active-chunk { background: var(--highlight); border-radius: 6px; }
         #storyContainer p {
             margin: 0 0 18px 0; padding: 4px 6px; border-radius: 6px; text-align: left; cursor: pointer; transition: background 0.15s;
         }
@@ -343,7 +344,7 @@
 
         function closeBookshelf() { document.getElementById("bookshelfSheet").classList.remove("open"); }
 
-        // --- BỘ PHÂN TÍCH CHƯƠNG & FILE ---
+        // --- BỘ PHÂN TÍCH CHƯƠNG & FILE (GIỮ TRỌN VẸN 100% NỘI DUNG, KHÔNG CẮT BỎ ĐOẠN ĐẦU) ---
         const fileInput = document.getElementById('fileInput');
         const storyContainer = document.getElementById('storyContainer');
         const chapterSelect = document.getElementById('chapterSelect');
@@ -354,8 +355,8 @@
 
         let chapters = [];
         let currentChapterIndex = 0;
-        let chunks = [];
-        let currentChunkIndex = 0;
+        let displayList = []; // Danh sách các item gồm cả Tiêu đề (index -1) và các đoạn văn p (index 0, 1, 2...)
+        let currentIndex = 0;
         let isSpeaking = false;
         let playSessionId = 0;
 
@@ -550,7 +551,7 @@
                     title: file.name.replace(/\.(txt|epub)$/i, ""),
                     chapters: parsedChapters,
                     lastChapter: 0,
-                    lastChunk: 0,
+                    lastIndex: 0,
                     updatedAt: Date.now()
                 };
                 await saveBookToDB(bookObj);
@@ -575,7 +576,7 @@
 
             const targetChap = Math.min(book.lastChapter || 0, chapters.length - 1);
             chapterSelect.value = targetChap;
-            renderChapter(targetChap, book.lastChunk || 0);
+            renderChapter(targetChap, book.lastIndex || 0);
         }
 
         function onChapterChange() {
@@ -586,42 +587,33 @@
             if (wasPlaying) startSpeechPlay(0);
         }
 
-        function renderChapter(chapterIdx, startChunk = 0) {
+        function renderChapter(chapterIdx, startIndex = 0) {
             currentChapterIndex = chapterIdx;
             const chap = chapters[currentChapterIndex];
             if (!chap) return;
 
-            chunks = chap.paragraphs;
-            currentChunkIndex = Math.min(startChunk, Math.max(0, chunks.length - 1));
+            // Xây dựng danh sách phát gộp cả Tiêu đề (index -1) và toàn bộ các đoạn văn p (0, 1, 2...)
+            displayList = [];
+            displayList.push({ type: 'title', text: chap.title });
+            chap.paragraphs.forEach(p => {
+                displayList.push({ type: 'para', text: p });
+            });
 
-            let html = `<h1 class="chap-heading">${chap.title}</h1>`;
-            
-            const cleanText = (str) => str.toLowerCase().replace(/[\s\p{P}]/gu, '');
-            const cleanedChapTitle = cleanText(chap.title);
+            currentIndex = Math.min(startIndex, Math.max(0, displayList.length - 1));
 
-            let firstValidPara = true;
-            for (let i = 0; i < chunks.length; i++) {
-                const cleanedChunk = cleanText(chunks[i]);
-                // Lọc bỏ triệt để đoạn văn bị trùng lặp với tiêu đề chương ở đầu
-                const isDupTitle = firstValidPara && (cleanedChunk === cleanedChapTitle || cleanedChunk.includes(cleanedChapTitle) || cleanedChapTitle.includes(cleanedChunk));
-                
-                if (isDupTitle) {
-                    firstValidPara = false;
-                    continue; // Bỏ qua không hiển thị đoạn trùng
-                }
-                if (cleanedChunk) firstValidPara = false;
-
-                html += `<p id="para-${i}" onclick="jumpToChunk(${i})">${chunks[i]}</p>`;
+            let html = `<h1 class="chap-heading" id="item--1" onclick="jumpToIndex(0)">${chap.title}</h1>`;
+            for (let i = 0; i < chap.paragraphs.length; i++) {
+                html += `<p id="item-${i}" onclick="jumpToIndex(${i + 1})">${chap.paragraphs[i]}</p>`;
             }
             storyContainer.innerHTML = html;
             storyContainer.scrollTop = 0;
-            highlightParagraph(currentChunkIndex);
+            highlightItem(currentIndex);
         }
 
-        // --- HỆ THỐNG ĐỌC TRỰC TIẾP SIRI (FIX TRIỆT ĐỂ LỖI NGẮT ĐOẠN 1 TỪ) ---
+        // --- HỆ THỐNG ĐỌC TRỰC TIẾP TỐI ƯU (NGẮT NGHỈ CHUẨN XÁC GIỮA TIÊU ĐỀ VÀ NỘI DUNG) ---
         function toggleSpeechPlay() {
             if (isSpeaking) stopSpeech();
-            else startSpeechPlay(currentChunkIndex);
+            else startSpeechPlay(currentIndex);
         }
 
         function stopSpeech() {
@@ -633,15 +625,15 @@
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
         }
 
-        function jumpToChunk(idx) {
+        function jumpToIndex(idx) {
             stopSpeech();
             setTimeout(() => {
                 startSpeechPlay(idx);
-            }, 150); // Delay an toàn để Safari giải phóng luồng cũ hoàn toàn
+            }, 150);
         }
 
         function startSpeechPlay(startIndex) {
-            if (chunks.length === 0) return;
+            if (displayList.length === 0) return;
             playSessionId++;
             const currentSession = playSessionId;
 
@@ -649,11 +641,24 @@
             if ('speechSynthesis' in window) window.speechSynthesis.cancel();
             isSpeaking = true;
             playToggleBtn.innerHTML = "■ Dừng nghe";
-            currentChunkIndex = startIndex;
+            currentIndex = startIndex;
             
             setTimeout(() => {
-                playNextUtterance(currentChunkIndex, currentSession);
+                playNextItem(currentIndex, currentSession);
             }, 100);
+        }
+
+        async function saveProgress() {
+            if (!currentBookId || chapters.length === 0) return;
+            try {
+                const book = await getBookById(currentBookId);
+                if (book) {
+                    book.lastChapter = currentChapterIndex;
+                    book.lastIndex = currentIndex;
+                    book.updatedAt = Date.now();
+                    await saveBookToDB(book);
+                }
+            } catch (e) {}
         }
 
         function updateMediaSession() {
@@ -661,52 +666,55 @@
                 navigator.mediaSession.metadata = new MediaMetadata({
                     title: chapters[currentChapterIndex].title,
                     artist: bookHeaderTitle.textContent,
-                    album: `Đoạn ${currentChunkIndex + 1}/${chunks.length}`
+                    album: `Phần ${currentIndex + 1}/${displayList.length}`
                 });
                 navigator.mediaSession.playbackState = "playing";
-                navigator.mediaSession.setActionHandler('play', () => startSpeechPlay(currentChunkIndex));
+                navigator.mediaSession.setActionHandler('play', () => startSpeechPlay(currentIndex));
                 navigator.mediaSession.setActionHandler('pause', () => stopSpeech());
-                navigator.mediaSession.setActionHandler('previoustrack', () => jumpToChunk(Math.max(0, currentChunkIndex - 1)));
-                navigator.mediaSession.setActionHandler('nexttrack', () => jumpToChunk(currentChunkIndex + 1));
+                navigator.mediaSession.setActionHandler('previoustrack', () => jumpToIndex(Math.max(0, currentIndex - 1)));
+                navigator.mediaSession.setActionHandler('nexttrack', () => jumpToIndex(currentIndex + 1));
             }
         }
 
-        function playNextUtterance(idx, session) {
+        function playNextItem(idx, session) {
             if (!isSpeaking || session !== playSessionId) return;
 
-            if (idx >= chunks.length) {
+            if (idx >= displayList.length) {
                 if (currentChapterIndex + 1 < chapters.length) {
                     currentChapterIndex++;
                     chapterSelect.value = currentChapterIndex;
                     renderChapter(currentChapterIndex, 0);
                     saveProgress();
-                    playNextUtterance(0, session);
+                    playNextItem(0, session);
                 } else {
                     stopSpeech();
                 }
                 return;
             }
 
-            currentChunkIndex = idx;
-            highlightParagraph(idx);
+            currentIndex = idx;
+            highlightItem(idx);
             saveProgress();
             updateMediaSession();
 
-            const utterance = new SpeechSynthesisUtterance(chunks[idx]);
+            const item = displayList[idx];
+            const utterance = new SpeechSynthesisUtterance(item.text);
             utterance.lang = 'vi-VN';
             utterance.rate = parseFloat(speedSelect.value);
 
             utterance.onend = () => {
                 if (isSpeaking && session === playSessionId) {
+                    // Nếu vừa đọc xong tiêu đề (item index -1 ứng với displayList[0]), tạo khoảng nghỉ 600ms trang nhã rồi mới đọc tiếp
+                    const delayTime = (idx === 0) ? 600 : 50;
                     setTimeout(() => {
-                        playNextUtterance(currentChunkIndex + 1, session);
-                    }, 50);
+                        playNextItem(currentIndex + 1, session);
+                    }, delayTime);
                 }
             };
             utterance.onerror = () => {
                 if (isSpeaking && session === playSessionId) {
                     setTimeout(() => {
-                        playNextUtterance(currentChunkIndex + 1, session);
+                        playNextItem(currentIndex + 1, session);
                     }, 100);
                 }
             };
@@ -714,14 +722,16 @@
             window.speechSynthesis.speak(utterance);
         }
 
-        function highlightParagraph(index) {
-            document.querySelectorAll('#storyContainer p.active-chunk').forEach(p => p.classList.remove('active-chunk'));
-            chunkCounter.textContent = chunks.length > 0 ? `${index + 1} / ${chunks.length}` : "0 / 0";
-            const activePara = document.getElementById(`para-${index}`);
-            if (activePara && activePara.style.display !== 'none') {
-                activePara.classList.add('active-chunk');
+        function highlightItem(index) {
+            document.querySelectorAll('#storyContainer .active-chunk').forEach(el => el.classList.remove('active-chunk'));
+            chunkCounter.textContent = displayList.length > 0 ? `${index + 1} / ${displayList.length}` : "0 / 0";
+            
+            const targetId = (index === 0) ? 'item--1' : `item-${index - 1}`;
+            const activeEl = document.getElementById(targetId);
+            if (activeEl) {
+                activeEl.classList.add('active-chunk');
                 if (document.visibilityState === 'visible') {
-                    activePara.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
             }
         }

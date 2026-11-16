@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI Story Reader - Fix Chapter Select</title>
+    <title>AI Story Reader - Perfect TOC</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -90,7 +90,7 @@
         <div style="text-align:center; padding: 40px 16px; color: var(--text-muted); font-family: sans-serif;">
             <div style="font-size: 40px; margin-bottom: 12px;">🎧</div>
             <div style="font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc truyện & văn bản</div>
-            <div style="font-size: 13px;">Bấm <b>＋ Mở file</b> để bắt đầu. Menu chọn chương sẽ tự động xuất hiện.</div>
+            <div style="font-size: 13px;">Bấm <b>＋ Mở file</b> để bắt đầu. Hệ thống sẽ phân tích mục lục chuẩn xác.</div>
         </div>
     </main>
 
@@ -132,7 +132,6 @@
         const silentAudio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAZGF0YQQAAAAAAA==");
         silentAudio.loop = true;
 
-        // Phân tách văn bản thành các đoạn nhỏ
         function processRawTextToChunks(rawText) {
             const lines = rawText.split(/\r?\n/);
             const valid = [];
@@ -147,21 +146,21 @@
             const file = e.target.files.item(0);
             if (!file) return;
 
-            stopSpeech("⏳ Đang phân tích file...");
+            status.textContent = `⏳ Đang phân tích file chuẩn xác...`;
             try {
                 chapters = [];
                 if (file.name.toLowerCase().endsWith('.txt')) {
                     const text = await file.text();
-                    // Tự động tách chương nếu có từ khóa "Chương" hoặc "Hồi"
-                    const chapterSplits = text.split(/(?=^(?:Chương|Hồi|Chapter)\s+\d+)/gim);
+                    // Regex chuẩn chỉ bắt dòng bắt đầu bằng từ Chương hoặc Hồi (không bị nhảy cóc)
+                    const chapterSplits = text.split(/(?=^(?:Chương|Hồi|Chapter)\s+\d+[:\s])/gim);
                     
                     if (chapterSplits.length > 1) {
                         chapterSplits.forEach((chapText, idx) => {
                             const trimmed = chapText.trim();
                             if (trimmed) {
-                                const firstLine = trimmed.split('\n')[0].substring(0, 50);
+                                const firstLine = trimmed.split('\n')[0].substring(0, 60);
                                 chapters.push({
-                                    title: firstLine.match(/^(?:Chương|Hồi|Chapter)/i) ? firstLine : `Chương ${idx + 1}`,
+                                    title: /^(?:Chương|Hồi|Chapter)\s+\d+/i.test(firstLine) ? firstLine : `Chương ${idx + 1}`,
                                     paragraphs: processRawTextToChunks(trimmed)
                                 });
                             }
@@ -176,7 +175,7 @@
                     const zip = await JSZip.loadAsync(file);
                     const parser = new DOMParser();
 
-                    for (let filename of Object.keys(zip.files)) {
+                    for (let filename of Object.keys(zip.files).sort()) {
                         if (filename.endsWith('.html') || filename.endsWith('.xhtml') || filename.endsWith('.htm')) {
                             const content = await zip.files[filename].async("text");
                             const doc = parser.parseFromString(content, "text/html");
@@ -185,10 +184,10 @@
                             const paras = processRawTextToChunks(textContent);
                             
                             if (paras.length > 0) {
-                                // Lấy tiêu đề từ thẻ h1, h2 hoặc đoạn đầu tiên làm tên chương
-                                let chapTitle = doc.querySelector("h1, h2, h3")?.textContent?.trim() || `Phần ${chapters.length + 1}`;
-                                if (chapTitle.length > 60) chapTitle = chapTitle.substring(0, 57) + "...";
-                                
+                                let chapTitle = doc.querySelector("h1, h2, h3")?.textContent?.trim();
+                                if (!chapTitle || chapTitle.length > 60) {
+                                    chapTitle = paras[0].length < 50 ? paras[0] : `Chương ${chapters.length + 1}`;
+                                }
                                 chapters.push({
                                     title: chapTitle,
                                     paragraphs: paras
@@ -199,7 +198,6 @@
                     if (chapters.length === 0) throw new Error("Không tìm thấy nội dung hợp lệ trong file EPUB.");
                 }
 
-                // Cập nhật danh sách vào thẻ <select> chọn chương
                 chapterSelect.innerHTML = "";
                 chapters.forEach((chap, idx) => {
                     const opt = document.createElement("option");
@@ -216,7 +214,6 @@
             }
         });
 
-        // Xử lý khi người dùng chọn chương khác trên menu thả xuống
         function onChapterChange() {
             stopSpeech();
             const selectedIdx = parseInt(chapterSelect.value, 10);
@@ -304,7 +301,6 @@
         function playNextUtterance(idx) {
             if (!isSpeaking || idx >= chunks.length) {
                 if (idx >= chunks.length) {
-                    // Tự động chuyển sang chương tiếp theo nếu hết chương hiện tại
                     if (currentChapterIndex + 1 < chapters.length) {
                         currentChapterIndex++;
                         chapterSelect.value = currentChapterIndex;

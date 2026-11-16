@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI Story Reader - Web Speech TTS</title>
+    <title>AI Story Reader Pro</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -27,7 +27,6 @@
             padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0;
         }
         .brand { font-weight: 700; font-size: 15px; color: var(--accent); display: flex; align-items: center; gap: 6px; }
-        .header-actions { display: flex; align-items: center; gap: 6px; }
         .pill-btn {
             background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
             border-radius: 999px; padding: 6px 11px; font-size: 12px; font-weight: 600; cursor: pointer;
@@ -74,10 +73,10 @@
 <body>
 
     <header>
-        <div class="brand">🎧 Web Reader (Browser TTS)</div>
+        <div class="brand">🎧 Story Reader</div>
         <div class="header-actions">
             <label class="pill-btn pill-accent">
-                ＋ Mở file TXT/EPUB
+                ＋ Mở file
                 <input type="file" id="fileInput" accept=".txt,.epub" style="display:none;" onclick="this.value=null;">
             </label>
         </div>
@@ -91,18 +90,18 @@
         <div style="text-align:center; padding: 40px 16px; color: var(--text-muted); font-family: sans-serif;">
             <div style="font-size: 40px; margin-bottom: 12px;">📖</div>
             <div style="font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Chưa có nội dung</div>
-            <div style="font-size: 13px;">Bấm <b>＋ Mở file</b> để bắt đầu đọc sách/báo trực tiếp mà không cần bật máy tính.</div>
+            <div style="font-size: 13px;">Bấm <b>＋ Mở file</b> (.txt / .epub) để bắt đầu đọc sách.</div>
         </div>
     </main>
 
     <footer class="player-dock">
         <div class="status-row">
-            <span id="status">Sẵn sàng! Chọn file để nghe.</span>
+            <span id="status">Sẵn sàng!</span>
             <span id="chunkCounter">0 / 0</span>
         </div>
         <div class="controls-row">
-            <select id="voiceSelect" class="dock-select" onchange="onVoiceChange()" title="Chọn giọng đọc">
-                <option value="">Đang tải giọng đọc...</option>
+            <select id="voiceSelect" class="dock-select" title="Chọn giọng đọc">
+                <option value="default">🎙 Giọng mặc định</option>
             </select>
 
             <div class="transport">
@@ -111,7 +110,7 @@
                 <button class="ctrl-btn" onclick="nextChunk()" title="Đoạn tiếp">⏭</button>
             </div>
 
-            <select id="speedSelect" class="dock-select" onchange="updateSpeed()" style="max-width:75px;">
+            <select id="speedSelect" class="dock-select" style="max-width:75px;">
                 <option value="0.8">0.8x</option>
                 <option value="1.0" selected>1.0x</option>
                 <option value="1.2">1.2x</option>
@@ -126,8 +125,6 @@
         const storyContainer = document.getElementById('storyContainer');
         const status = document.getElementById('status');
         const chapterSelect = document.getElementById('chapterSelect');
-        const voiceSelect = document.getElementById('voiceSelect');
-        const speedSelect = document.getElementById('speedSelect');
         const playToggleBtn = document.getElementById('playToggleBtn');
         const chunkCounter = document.getElementById('chunkCounter');
 
@@ -136,52 +133,23 @@
         let chunks = [];
         let currentChunkIndex = 0;
         let isPlaying = false;
-        let voices = [];
-
-        // Khởi tạo danh sách giọng đọc tiếng Việt có sẵn trên trình duyệt
-        function loadVoices() {
-            voices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('vi') || v.lang.includes('VN'));
-            if (voices.length === 0) {
-                // Nếu không lọc được tiếng Việt chuẩn, lấy toàn bộ giọng của máy
-                voices = window.speechSynthesis.getVoices();
-            }
-            voiceSelect.innerHTML = "";
-            voices.forEach((v, idx) => {
-                const opt = document.createElement("option");
-                opt.value = idx;
-                opt.textContent = `${v.name} (${v.lang})`;
-                voiceSelect.appendChild(opt);
-            });
-            if (voices.length === 0) {
-                const opt = document.createElement("option");
-                opt.textContent = "Mặc định hệ thống";
-                voiceSelect.appendChild(opt);
-            }
-        }
-
-        if ('speechSynthesis' in window) {
-            loadVoices();
-            window.speechSynthesis.onvoiceschanged = loadVoices;
-        }
+        let currentAudio = null;
 
         function processRawTextToChunks(rawText) {
-            const rawLines = rawText.split(/\r?\n/);
-            const mergedLines = [];
-            for (let line of rawLines) {
-                let trimmed = line.replace(/\s+/g, ' ').trim();
-                if (!trimmed) continue;
-                mergedLines.push(trimmed);
+            const lines = rawText.split(/\r?\n/);
+            const chunks = [];
+            for (let line of lines) {
+                let trimmed = line.trim();
+                if (trimmed) chunks.push(trimmed);
             }
-            return mergedLines;
+            return chunks;
         }
 
         fileInput.addEventListener('change', async (e) => {
             const file = e.target.files.item(0);
             if (!file) return;
 
-            window.speechSynthesis.cancel();
             status.textContent = `⏳ Đang đọc file: ${file.name}...`;
-
             try {
                 const text = await file.text();
                 const paras = processRawTextToChunks(text);
@@ -191,7 +159,7 @@
                 document.getElementById("chapterBar").style.display = "flex";
 
                 renderChapter(0, 0);
-                status.textContent = `✅ Đã tải xong file! Bấm ▶ để nghe.`;
+                status.textContent = `✅ Đã tải file thành công!`;
             } catch (err) {
                 status.textContent = `❌ Lỗi đọc file: ${err.message}`;
             }
@@ -206,98 +174,77 @@
             currentChunkIndex = Math.min(startChunk, Math.max(0, chunks.length - 1));
 
             storyContainer.innerHTML = chunks.map((text, idx) => {
-                const wordsHtml = text.split(/(\s+)/).map((part, wIdx) => {
-                    if (/^\s+$/.test(part)) return part;
-                    return `<span class="word-span" id="w-${idx}-${wIdx}">${part}</span>`;
-                }).join('');
-                return `<p id="para-${idx}" onclick="startTTS(${idx})">${wordsHtml}</p>`;
-            }.join(''));
+                return `<p id="para-${idx}" onclick="playChunk(${idx})">${text}</p>`;
+            }).join('');
 
             highlightParagraph(currentChunkIndex);
         }
 
         function togglePlayPause() {
             if (isPlaying) {
-                window.speechSynthesis.pause();
+                if (currentAudio) currentAudio.pause();
                 isPlaying = false;
                 playToggleBtn.textContent = "▶";
                 status.textContent = "⏸ Đã tạm dừng.";
             } else {
-                if (window.speechSynthesis.paused) {
-                    window.speechSynthesis.resume();
-                    isPlaying = true;
-                    playToggleBtn.textContent = "■";
-                    status.textContent = "🔊 Đang đọc tiếp...";
-                } else {
-                    startTTS(currentChunkIndex);
-                }
+                playChunk(currentChunkIndex);
             }
         }
 
-        function startTTS(startIndex = 0) {
-            if (chunks.length === 0) {
-                alert("Vui lòng mở file văn bản trước!");
-                return;
-            }
-
-            window.speechSynthesis.cancel();
-            currentChunkIndex = startIndex;
-            playParagraph(currentChunkIndex);
-        }
-
-        function playParagraph(idx) {
-            if (idx >= chunks.length) {
-                status.textContent = "✅ Đã đọc xong toàn bộ văn bản!";
-                stopTTS();
-                return;
-            }
-
+        async function playChunk(idx) {
+            if (chunks.length === 0) return;
             currentChunkIndex = idx;
             highlightParagraph(idx);
-            status.textContent = `🔊 Đang đọc đoạn ${idx + 1}/${chunks.length}`;
 
-            const utterance = new SpeechSynthesisUtterance(chunks[idx]);
-            const selectedVoiceIdx = voiceSelect.value;
-            if (voices[selectedVoiceIdx]) {
-                utterance.voice = voices[selectedVoiceIdx];
+            const text = chunks[idx];
+            status.textContent = `🔊 Đang tạo giọng đọc đoạn ${idx + 1}/${chunks.length}...`;
+
+            try {
+                const res = await fetch("http://localhost:5000/tts", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ text: text, voice: "default" })
+                });
+
+                if (!res.ok) throw new Error("Lỗi Server TTS");
+                const blob = await res.blob();
+                const audioUrl = URL.createObjectURL(blob);
+
+                if (currentAudio) currentAudio.pause();
+                currentAudio = new Audio(audioUrl);
+                
+                isPlaying = true;
+                playToggleBtn.textContent = "■";
+                status.textContent = `🔊 Đang đọc...`;
+
+                currentAudio.play().catch(() => {});
+
+                currentAudio.onended = () => {
+                    if (currentChunkIndex + 1 < chunks.length) {
+                        playChunk(currentChunkIndex + 1);
+                    } else {
+                        status.textContent = "✅ Đã đọc xong!";
+                        isPlaying = false;
+                        playToggleBtn.textContent = "▶";
+                    }
+                };
+            } catch (e) {
+                status.textContent = `⚠️ Không kết nối được Server TTS cục bộ.`;
+                isPlaying = false;
+                playToggleBtn.textContent = "▶";
             }
-            utterance.rate = parseFloat(speedSelect.value);
-
-            utterance.onboundary = (event) => {
-                // Hiệu ứng highlight từ đang đọc nếu trình duyệt hỗ trợ
-                if (event.name === 'word') {
-                    // Có thể tối ưu thêm highlight theo ký tự tại đây
-                }
-            };
-
-            utterance.onend = () => {
-                if (isPlaying) {
-                    playParagraph(currentChunkIndex + 1);
-                }
-            };
-
-            utterance.onerror = () => {
-                status.textContent = "⚠️ Lỗi trình phát giọng đọc.";
-                stopTTS();
-            };
-
-            isPlaying = true;
-            playToggleBtn.textContent = "■";
-            window.speechSynthesis.speak(utterance);
         }
 
         function prevChunk() {
             if (chunks.length === 0) return;
             const prev = Math.max(0, currentChunkIndex - 1);
-            window.speechSynthesis.cancel();
-            playParagraph(prev);
+            playChunk(prev);
         }
 
         function nextChunk() {
             if (chunks.length === 0) return;
             const next = Math.min(chunks.length - 1, currentChunkIndex + 1);
-            window.speechSynthesis.cancel();
-            playParagraph(next);
+            playChunk(next);
         }
 
         function highlightParagraph(index) {
@@ -310,19 +257,7 @@
             }
         }
 
-        function updateSpeed() {
-            // Tốc độ sẽ áp dụng ở đoạn văn tiếp theo
-        }
-
-        function onVoiceChange() {}
         function onChapterChange() {}
-
-        function stopTTS() {
-            window.speechSynthesis.cancel();
-            isPlaying = false;
-            playToggleBtn.textContent = "▶";
-            status.textContent = "⏹ Đã dừng phát.";
-        }
     </script>
 </body>
 </html>

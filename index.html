@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI Story Reader - Siri Voice & Perfect Parser</title>
+    <title>AI Story Reader - Perfect Parser & Siri</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -89,8 +89,8 @@
     <main id="storyContainer">
         <div style="text-align:center; padding: 40px 16px; color: var(--text-muted); font-family: sans-serif;">
             <div style="font-size: 40px; margin-bottom: 12px;">🎧</div>
-            <div style="font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc truyện chuẩn cấu trúc</div>
-            <div style="font-size: 13px;">Bấm <b>＋ Mở file</b> để phân tích chính xác từng chương.</div>
+            <div style="font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc offline - Giọng Siri</div>
+            <div style="font-size: 13px;">Bấm <b>＋ Mở file</b>. Đã chặn lỗi "Unknown" và ưu tiên giọng cao cấp.</div>
         </div>
     </main>
 
@@ -119,25 +119,39 @@
     </footer>
 
     <script>
-        // --- 1. GIỮ NGUYÊN BỘ NẠP GIỌNG ĐỂ ÉP RA GIỌNG SIRI ---
+        // --- 1. HỆ THỐNG NẠP GIỌNG ĐỌC & ƯU TIÊN SIRI/PREMIUM ---
         const voiceSelect = document.getElementById('voiceSelect');
         let voices = [];
-        let selectedVoiceIndex = localStorage.getItem("browser_tts_voice_idx") || 0;
+        let selectedVoiceIndex = localStorage.getItem("browser_tts_voice_idx");
 
         function loadVoices() {
             voices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('vi') || v.lang.includes('VN'));
             if (voices.length === 0) voices = window.speechSynthesis.getVoices(); 
 
             voiceSelect.innerHTML = "";
+            let bestIndex = 0; // Ưu tiên tìm giọng Premium
+
             voices.forEach((v, idx) => {
                 const opt = document.createElement("option");
                 opt.value = idx;
                 opt.textContent = `${v.name} (${v.lang})`;
                 voiceSelect.appendChild(opt);
+
+                // Nếu tên giọng có chứa Premium, Siri, hoặc Enhanced thì tự động đánh dấu là tốt nhất
+                const lowerName = v.name.toLowerCase();
+                if (lowerName.includes("premium") || lowerName.includes("siri") || lowerName.includes("enhanced")) {
+                    bestIndex = idx;
+                }
             });
+
             if (voices.length > 0) {
-                if (selectedVoiceIndex < voices.length) voiceSelect.value = selectedVoiceIndex;
-                else voiceSelect.value = 0;
+                if (selectedVoiceIndex !== null && selectedVoiceIndex < voices.length) {
+                    voiceSelect.value = selectedVoiceIndex;
+                } else {
+                    // Nếu chưa chọn bao giờ, tự động ép sang giọng ngon nhất tìm được
+                    voiceSelect.value = bestIndex;
+                    selectedVoiceIndex = bestIndex;
+                }
             }
         }
 
@@ -173,136 +187,119 @@
         const silentAudio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAZGF0YQQAAAAAAA==");
         silentAudio.loop = true;
 
-        function processRawTextToChunks(rawText) {
-            const lines = rawText.split(/\r?\n/);
-            const valid = [];
-            for (let line of lines) {
-                let trimmed = line.replace(/\s+/g, ' ').trim();
-                if (trimmed) valid.push(trimmed);
+        // --- 2. HỆ THỐNG PHÂN TÍCH CHƯƠNG CHUẨN XÁC CỦA MÀY ---
+        const CHAPTER_REGEX = /^(?:Chương|Hồi|Quyển|Phần|Tiết|Tập|Phiên\s*ngoại|Ngoại\s*truyện|Chapter)\s*[\dIVXLCDM\-]+.*/i;
+
+        function detectChapterTitleFromParagraphs(paragraphs, htmlDoc, fallbackTitle) {
+            // Cách 1: Quét 10 đoạn văn đầu tiên tìm tên chương
+            for (let i = 0; i < Math.min(10, paragraphs.length); i++) {
+                const line = paragraphs[i].trim();
+                if (CHAPTER_REGEX.test(line)) return line.substring(0, 75);
             }
-            return valid;
+            // Cách 2: Tìm các thẻ H1, H2, class .title (Không dùng thẻ <title> để tránh lỗi Unknown)
+            if (htmlDoc) {
+                const headings = htmlDoc.querySelectorAll("h1, h2, h3, .chapter-title, .title");
+                for (let h of headings) {
+                    const t = h.textContent.replace(/\s+/g, ' ').trim();
+                    // Loại bỏ triệt để các tiêu đề rác như unknown, untitled, mục lục...
+                    if (t && !/^(unknown|untitled|chương mới|mục lục|cover|title page)$/i.test(t)) {
+                        return t.substring(0, 75);
+                    }
+                }
+            }
+            return fallbackTitle || (paragraphs.length > 0 ? paragraphs[0].substring(0, 60) : "Chương không tên");
         }
 
-        // --- 2. THUẬT TOÁN PHÂN TÍCH CHƯƠNG ĐÃ ĐƯỢC FIX LỖI ---
+        function extractParagraphsFromHtml(htmlContent, fallbackTitle) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(htmlContent, "text/html");
+            doc.querySelectorAll("script, style, nav").forEach(el => el.remove());
+            doc.querySelectorAll("br").forEach(br => br.replaceWith("\n"));
+            doc.querySelectorAll("p, div, h1, h2, h3, h4, li, blockquote").forEach(el => {
+                el.appendChild(doc.createTextNode("\n"));
+            });
+            const rawText = doc.body ? doc.body.textContent : doc.textContent;
+            const paragraphs = processRawTextToChunks(rawText);
+            const title = detectChapterTitleFromParagraphs(paragraphs, doc, fallbackTitle);
+            return { title, paragraphs };
+        }
+
+        function processRawTextToChunks(rawText) {
+            const rawLines = rawText.split(/\r?\n/);
+            const mergedLines = [];
+            const validCharRegex = /[a-zA-Z0-9àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđĐ]/;
+
+            for (let line of rawLines) {
+                let trimmed = line.replace(/\s+/g, ' ').trim();
+                if (!trimmed || /^(unknown|untitled)$/i.test(trimmed) || !validCharRegex.test(trimmed)) continue;
+
+                if (mergedLines.length > 0) {
+                    const prev = mergedLines[mergedLines.length - 1];
+                    if (!/[.!?;:”"']$/.test(prev) && !CHAPTER_REGEX.test(trimmed)) {
+                        mergedLines[mergedLines.length - 1] = prev + " " + trimmed;
+                        continue;
+                    }
+                }
+                mergedLines.push(trimmed);
+            }
+            return mergedLines;
+        }
+
         fileInput.addEventListener('change', async (e) => {
             const file = e.target.files.item(0);
             if (!file) return;
 
-            status.textContent = `⏳ Đang đọc cấu trúc file...`;
+            status.textContent = `⏳ Đang phân tích chuẩn xác...`;
             try {
                 chapters = [];
-                // Regex xịn: Bắt được cả số thường và số La Mã (I, IV, X...), tránh bỏ sót chương
-                const chapterRegex = /^(?:Chương|Hồi|Quyển|Phần|Tiết|Chapter)\s*[\dIVXLCDM]+/i;
-
                 if (file.name.toLowerCase().endsWith('.txt')) {
                     const text = await file.text();
-                    const lines = text.split(/\r?\n/);
-                    let currentTitle = "Chương 1";
-                    let currentParas = [];
-
-                    for (let line of lines) {
-                        let trimmed = line.trim();
-                        if (chapterRegex.test(trimmed) && trimmed.length < 80) {
-                            if (currentParas.length > 0) {
-                                chapters.push({ title: currentTitle, paragraphs: currentParas });
-                                currentParas = [];
+                    const splits = text.split(/(?=^(?:Chương|Hồi|Quyển|Phần|Tiết|Chapter)\s*[\dIVXLCDM]+)/im);
+                    if (splits.length <= 1) {
+                        const paras = processRawTextToChunks(text);
+                        chapters.push({
+                            title: detectChapterTitleFromParagraphs(paras, null, "Toàn bộ nội dung"),
+                            paragraphs: paras
+                        });
+                    } else {
+                        splits.forEach((content, idx) => {
+                            if (content.trim()) {
+                                const paras = processRawTextToChunks(content);
+                                if (paras.length > 0) {
+                                    chapters.push({
+                                        title: detectChapterTitleFromParagraphs(paras, null, `Chương ${idx + 1}`),
+                                        paragraphs: paras
+                                    });
+                                }
                             }
-                            currentTitle = trimmed;
-                        } else if (trimmed) {
-                            currentParas.push(trimmed);
-                        }
-                    }
-                    if (currentParas.length > 0) {
-                        chapters.push({ title: currentTitle, paragraphs: currentParas });
-                    }
-                    if (chapters.length === 0) {
-                        chapters.push({ title: file.name, paragraphs: processRawTextToChunks(text) });
+                        });
                     }
                 } else if (file.name.toLowerCase().endsWith('.epub')) {
                     const zip = await JSZip.loadAsync(file);
-                    const parser = new DOMParser();
+                    
+                    // Lọc và sắp xếp trực tiếp các file html trong EPUB
+                    const spinePaths = Object.keys(zip.files)
+                        .filter(k => /\.(x?html|htm)$/i.test(k) && !/(cover|titlepage|toc|nav)\.(x?html|htm)$/i.test(k))
+                        .sort((a, b) => a.localeCompare(b, 'vi', { numeric: true, sensitivity: 'base' }));
 
-                    let opfPath = "";
-                    const containerFile = zip.file("META-INF/container.xml");
-                    if (containerFile) {
-                        const containerXml = await containerFile.async("text");
-                        const containerDoc = parser.parseFromString(containerXml, "text/xml");
-                        const rootfile = containerDoc.getElementsByTagName("rootfile")[0];
-                        if (rootfile) opfPath = rootfile.getAttribute("full-path");
-                    }
+                    for (let i = 0; i < spinePaths.length; i++) {
+                        const pathKey = spinePaths[i];
+                        const fileInZip = zip.file(pathKey);
+                        if (fileInZip) {
+                            const htmlContent = await fileInZip.async("text");
+                            const cleanFileName = pathKey.split('/').pop().replace(/\.(x?html|htm)$/i, '');
+                            const fallbackTitle = CHAPTER_REGEX.test(cleanFileName) ? cleanFileName : `Chương ${chapters.length + 1}`;
 
-                    let spineIds = [];
-                    let manifest = {};
-
-                    if (opfPath && zip.file(opfPath)) {
-                        const opfFolder = opfPath.includes('/') ? opfPath.substring(0, opfPath.lastIndexOf('/') + 1) : "";
-                        const opfXml = await zip.file(opfPath).async("text");
-                        const opfDoc = parser.parseFromString(opfXml, "text/xml");
-
-                        const items = opfDoc.getElementsByTagName("item");
-                        for (let item of items) {
-                            const id = item.getAttribute("id");
-                            const href = item.getAttribute("href");
-                            if (id && href) {
-                                manifest[id] = opfFolder + href;
-                            }
-                        }
-
-                        const itemrefs = opfDoc.getElementsByTagName("itemref");
-                        for (let ref of itemrefs) {
-                            const idref = ref.getAttribute("idref");
-                            if (idref && manifest[idref]) {
-                                spineIds.push(manifest[idref]);
+                            // Đưa vào bộ trích xuất thông minh để chặn Unknown
+                            const extracted = extractParagraphsFromHtml(htmlContent, fallbackTitle);
+                            if (extracted.paragraphs.length > 0) {
+                                chapters.push(extracted);
                             }
                         }
                     }
-
-                    if (spineIds.length === 0) {
-                        spineIds = Object.keys(zip.files).filter(k => /\.(html|xhtml|htm)$/i.test(k)).sort();
-                    }
-
-                    for (let i = 0; i < spineIds.length; i++) {
-                        const path = spineIds[i];
-                        const zipFile = zip.file(path) || zip.file(decodeURIComponent(path));
-                        if (zipFile) {
-                            const content = await zipFile.async("text");
-                            const doc = parser.parseFromString(content, "text/html");
-                            
-                            // BƯỚC ĂN TIỀN DÀNH CHO EPUB: Chèn \n vào đuôi các thẻ block để chữ không bị dính vào nhau
-                            doc.querySelectorAll("script, style, nav, svg, img").forEach(el => el.remove());
-                            doc.querySelectorAll("br").forEach(br => br.replaceWith("\n"));
-                            doc.querySelectorAll("p, div, h1, h2, h3, h4, li, blockquote, tr").forEach(el => {
-                                el.insertAdjacentText('beforeend', '\n');
-                            });
-
-                            const textContent = doc.body ? doc.body.textContent : doc.textContent;
-                            const paras = processRawTextToChunks(textContent);
-
-                            if (paras.length > 1) { 
-                                let titleEl = doc.querySelector("h1, h2, h3, title");
-                                let chapTitle = titleEl ? titleEl.textContent.replace(/\s+/g, ' ').trim() : "";
-                                
-                                // Quét thử 5 dòng đầu tiên xem có giống tên chương không nếu title HTML bị rỗng
-                                if (!chapTitle || chapTitle.length > 80 || /cover|title|mục lục|toc/i.test(chapTitle)) {
-                                    let found = false;
-                                    for(let p=0; p < Math.min(5, paras.length); p++) {
-                                        if (chapterRegex.test(paras[p])) {
-                                            chapTitle = paras[p].substring(0, 70);
-                                            found = true;
-                                            break;
-                                        }
-                                    }
-                                    if(!found) chapTitle = paras[0].length < 50 ? paras[0] : `Chương ${chapters.length + 1}`;
-                                }
-                                chapters.push({
-                                    title: chapTitle,
-                                    paragraphs: paras
-                                });
-                            }
-                        }
-                    }
-                    if (chapters.length === 0) throw new Error("Không tìm thấy chương hợp lệ trong file EPUB.");
                 }
+
+                if (chapters.length === 0) throw new Error("Không tìm thấy nội dung trong file.");
 
                 chapterSelect.innerHTML = "";
                 chapters.forEach((chap, idx) => {
@@ -314,9 +311,9 @@
                 document.getElementById("chapterBar").style.display = "flex";
 
                 renderChapter(0, 0);
-                status.textContent = `✅ Đã phân tích xong ${chapters.length} chương! Không còn lỗi nhảy cóc.`;
+                status.textContent = `✅ Đã phân tích xong ${chapters.length} chương! Không còn lỗi Unknown.`;
             } catch (err) {
-                status.textContent = `❌ Lỗi phân tích file: ${err.message}`;
+                status.textContent = `❌ Lỗi đọc file: ${err.message}`;
             }
         });
 
@@ -367,10 +364,7 @@
         }
 
         function startSpeechPlay(startIndex) {
-            if (chunks.length === 0) {
-                alert("Vui lòng mở file truyện/báo trước!");
-                return;
-            }
+            if (chunks.length === 0) return;
 
             silentAudio.play().catch(() => {});
             isSpeaking = true;
@@ -418,7 +412,7 @@
             const text = chunks[idx];
             const utterance = new SpeechSynthesisUtterance(text);
             
-            // Dòng này nạp đích danh giọng Siri thay vì giọng "em Linh"
+            // Dòng ép nạp Voice Siri xịn từ danh sách đã lọc
             if (voices[selectedVoiceIndex]) {
                 utterance.voice = voices[selectedVoiceIndex];
             }

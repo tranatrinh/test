@@ -75,11 +75,10 @@
         }
         #storyContainer p.active-chunk { background: var(--highlight); }
 
-        /* Hiệu ứng chạy từng chữ chuẩn Apple Books */
         .w-tok {
             border-radius: 4px;
             padding: 1px 0;
-            transition: background-color 0.08s ease;
+            transition: background-color 0.06s ease;
         }
         .w-tok.active-word {
             background-color: var(--word-bg);
@@ -148,7 +147,7 @@
         <div style="text-align:center; padding: 70px 20px; color: var(--muted); font-family: -apple-system, sans-serif;">
             <div style="font-size: 44px; margin-bottom: 14px;">📖</div>
             <div style="font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc sách Apple Books</div>
-            <div style="font-size: 14px;">Bấm nút <b>＋</b> góc trái để mở file sách.<br>Đã hỗ trợ chạy chữ realtime, bấm chuyển đoạn mượt và phát tiếng ngay cả khi gạt tắt chuông.</div>
+            <div style="font-size: 14px;">Bấm nút <b>＋</b> góc trái để mở file sách.<br>Đã fix triệt để lỗi bấm nhảy đoạn bị ngắt 1 chữ và chạy mượt từng từ.</div>
         </div>
     </main>
 
@@ -379,80 +378,34 @@
         let isSpeaking = false;
         let playSessionId = 0;
         let activeUtterance = null;
-        let watchdogTimer = null;
+        let wordTicker = null;
+        let jumpTimer = null;
 
-        // --- CƠ CHẾ PHÁ KHÓA NÚT GẠT TẮT CHUÔNG (SILENT SWITCH BYPASS) & CHẠY NGẦM TRÊN iOS ---
-        // Tạo sóng âm tần số thấp có biên độ đủ lớn để iOS xếp vào kênh Media Playback (vẫn kêu khi gạt nút im lặng)
-        function createPlaybackChannelWavUrl() {
-            const sampleRate = 8000;
-            const numSamples = sampleRate * 3;
-            const buffer = new ArrayBuffer(44 + numSamples * 2);
-            const view = new DataView(buffer);
-            const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
-            writeStr(0, 'RIFF'); view.setUint32(4, 36 + numSamples * 2, true); writeStr(8, 'WAVE'); writeStr(12, 'fmt ');
-            view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-            view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
-            view.setUint16(32, 2, true); view.setUint16(34, 16, true); writeStr(36, 'data'); view.setUint32(40, numSamples * 2, true);
-            for (let i = 0; i < numSamples; i++) {
-                // Sóng 20Hz biên độ 35/32767: tai người không nghe thấy tiếng ù nhưng bộ lọc phần cứng iOS nhận diện là Media đang phát
-                const sample = Math.round(Math.sin(2 * Math.PI * 20 * (i / sampleRate)) * 35);
-                view.setInt16(44 + i * 2, sample, true);
-            }
-            return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
-        }
-
-        const mediaCarrierAudio = new Audio(createPlaybackChannelWavUrl());
-        mediaCarrierAudio.loop = true;
-        mediaCarrierAudio.playsInline = true;
-        mediaCarrierAudio.volume = 0.08;
-
-        let audioCtx = null;
+        // --- GIỮ KÊNH PLAYBACK (KHÔNG GỌI LẶP LẠI GÂY XUNG ĐỘT VỚI SIRI KHI CHUYỂN ĐOẠN) ---
+        let audioSessionInitialized = false;
         let wakeLockSentinel = null;
 
-        function forceIosPlaybackAudioSession() {
-            // 1. Dùng API chuẩn mới của Safari iOS (iOS 16.4+) để ép âm thanh phát qua kênh Playback bất chấp nút gạt tắt chuông
+        function ensurePlaybackSessionOnce() {
             try {
-                if ('audioSession' in navigator) {
+                if ('audioSession' in navigator && navigator.audioSession.type !== 'playback') {
                     navigator.audioSession.type = 'playback';
                 }
             } catch (e) {}
 
-            // 2. Phát thẻ <audio> mang sóng âm nền để giữ kênh Media
-            if (mediaCarrierAudio.paused) {
-                mediaCarrierAudio.play().catch(() => {});
-            }
-
-            // 3. Mở khóa WebAudio API
-            try {
-                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                if (AudioContextClass) {
-                    if (!audioCtx) {
-                        audioCtx = new AudioContextClass();
-                        const osc = audioCtx.createOscillator();
-                        const gain = audioCtx.createGain();
-                        osc.frequency.value = 15;
-                        gain.gain.value = 0.005;
-                        osc.connect(gain);
-                        gain.connect(audioCtx.destination);
-                        osc.start();
-                    }
-                    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-                }
-            } catch (e) {}
-
-            // 4. Giữ sáng/thức màn hình nếu đang mở
             if ('wakeLock' in navigator && !wakeLockSentinel) {
                 navigator.wakeLock.request('screen').then(s => {
                     wakeLockSentinel = s;
                     s.addEventListener('release', () => { wakeLockSentinel = null; });
                 }).catch(() => {});
             }
+            audioSessionInitialized = true;
         }
 
-        function releaseIosPlaybackAudioSession() {
-            mediaCarrierAudio.pause();
-            if (audioCtx && audioCtx.state === 'running') audioCtx.suspend().catch(() => {});
-            if (wakeLockSentinel) { wakeLockSentinel.release().catch(() => {}); wakeLockSentinel = null; }
+        function releasePlaybackSession() {
+            if (wakeLockSentinel) {
+                wakeLockSentinel.release().catch(() => {});
+                wakeLockSentinel = null;
+            }
         }
 
         const CHAPTER_REGEX = /^(?:Chương|Hồi|Quyển|Phần|Tiết|Tập|Phiên\s*ngoại|Ngoại\s*truyện|Chapter)\s*[\dIVXLCDM\-]+.*/i;
@@ -691,15 +644,17 @@
         function onChapterChange() {
             const wasPlaying = isSpeaking;
             const newChapIdx = parseInt(chapterSelect.value, 10);
-            renderChapter(newChapIdx, 0);
-            saveProgress();
             if (wasPlaying) {
+                renderChapter(newChapIdx, 0);
+                saveProgress();
                 jumpToIndex(0);
+            } else {
+                renderChapter(newChapIdx, 0);
+                saveProgress();
             }
         }
 
-        // Bọc từng từ vào thẻ <span class="w-tok" data-start="..."> để chạy chữ realtime khi Siri đọc
-        function buildWordTokensHtml(text, itemIdx) {
+        function buildWordTokensHtml(text) {
             let result = "";
             const regex = /\S+/g;
             let match;
@@ -734,70 +689,87 @@
 
             currentIndex = Math.min(startIndex, Math.max(0, displayList.length - 1));
 
-            let html = `<h1 class="chap-heading" id="item-0" onclick="jumpToIndex(0)">${buildWordTokensHtml(chap.title, 0)}</h1>`;
+            let html = `<h1 class="chap-heading" id="item-0" onclick="jumpToIndex(0)">${buildWordTokensHtml(chap.title)}</h1>`;
             for (let i = 0; i < chap.paragraphs.length; i++) {
                 const listIdx = i + 1;
-                html += `<p id="item-${listIdx}" onclick="jumpToIndex(${listIdx})">${buildWordTokensHtml(chap.paragraphs[i], listIdx)}</p>`;
+                html += `<p id="item-${listIdx}" onclick="jumpToIndex(${listIdx})">${buildWordTokensHtml(chap.paragraphs[i])}</p>`;
             }
             storyContainer.innerHTML = html;
             storyContainer.scrollTop = 0;
             highlightItem(currentIndex);
         }
 
-        // --- CƠ CHẾ ĐỌC TRỰC TIẾP ĐỒNG BỘ (KHÔNG SETTIMEOUT, KHÔNG KẸT HÀNG ĐỢI SAFARI, CÓ CHẠY CHỮ) ---
+        // --- HỆ THỐNG ĐỌC SIRI CHỐNG NGẮT 1 CHỮ KHI BẤM ĐỔI ĐOẠN & CHẠY CHỮ MƯỢT ---
+        function clearWordTicker() {
+            if (wordTicker) {
+                clearInterval(wordTicker);
+                wordTicker = null;
+            }
+        }
+
+        function clearWordHighlights() {
+            clearWordTicker();
+            document.querySelectorAll('.w-tok.active-word').forEach(el => el.classList.remove('active-word'));
+        }
+
         function toggleSpeechPlay() {
             if (isSpeaking) stopSpeech();
             else jumpToIndex(currentIndex);
         }
 
-        function clearWordHighlights() {
-            document.querySelectorAll('.w-tok.active-word').forEach(el => el.classList.remove('active-word'));
-        }
-
         function stopSpeech() {
             playSessionId++;
             isSpeaking = false;
-            if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
+            if (jumpTimer) { clearTimeout(jumpTimer); jumpTimer = null; }
+            clearWordHighlights();
+
             if (activeUtterance) {
                 activeUtterance.onend = null;
                 activeUtterance.onerror = null;
                 activeUtterance.onboundary = null;
                 activeUtterance = null;
             }
-            releaseIosPlaybackAudioSession();
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
             }
-            clearWordHighlights();
+            releasePlaybackSession();
             playToggleBtn.innerHTML = "▶ Nghe trang";
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
         }
 
-        // Nhảy đoạn đồng bộ 100% trong User Gesture để Safari không bao giờ bị giật 1 chữ rồi câm
         function jumpToIndex(idx) {
             if (displayList.length === 0) return;
             playSessionId++;
             const currentSession = playSessionId;
+
+            if (jumpTimer) { clearTimeout(jumpTimer); jumpTimer = null; }
+            clearWordHighlights();
+
             isSpeaking = true;
             playToggleBtn.innerHTML = "■ Dừng nghe";
             currentIndex = Math.max(0, Math.min(idx, displayList.length - 1));
+            highlightItem(currentIndex);
 
-            // Mở khóa kênh Playback (kêu cả khi gạt tắt chuông)
-            forceIosPlaybackAudioSession();
+            ensurePlaybackSessionOnce();
 
-            // Hủy câu cũ trước khi phát câu mới ĐỒNG BỘ (không dùng setTimeout)
+            // Gỡ toàn bộ listener của câu cũ trước khi cancel
             if (activeUtterance) {
                 activeUtterance.onend = null;
                 activeUtterance.onerror = null;
                 activeUtterance.onboundary = null;
                 activeUtterance = null;
             }
-            if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-                window.speechSynthesis.resume();
-            }
 
-            speakItemNow(currentIndex, currentSession);
+            const wasSpeakingOrPending = window.speechSynthesis.speaking || window.speechSynthesis.pending;
+            window.speechSynthesis.cancel();
+
+            // Nếu Safari đang đọc dở, bắt buộc đợi 140ms cho tầng C++ của WebKit xả hết sự kiện onend giả rồi mới đọc câu mới
+            const waitMs = wasSpeakingOrPending ? 140 : 10;
+            jumpTimer = setTimeout(() => {
+                if (isSpeaking && currentSession === playSessionId) {
+                    speakItemSafe(currentIndex, currentSession, 0);
+                }
+            }, waitMs);
         }
 
         function updateMediaSession() {
@@ -815,7 +787,7 @@
             }
         }
 
-        function speakItemNow(idx, session) {
+        function speakItemSafe(idx, session, retryCount = 0) {
             if (!isSpeaking || session !== playSessionId) return;
 
             if (idx >= displayList.length) {
@@ -824,7 +796,7 @@
                     chapterSelect.value = currentChapterIndex;
                     renderChapter(currentChapterIndex, 0);
                     saveProgress();
-                    speakItemNow(0, session);
+                    speakItemSafe(0, session, 0);
                 } else {
                     stopSpeech();
                 }
@@ -839,65 +811,97 @@
             const item = displayList[idx];
             const blockEl = document.getElementById(`item-${idx}`);
             const wordSpans = blockEl ? Array.from(blockEl.querySelectorAll('.w-tok')) : [];
+            const rate = parseFloat(speedSelect.value) || 1.0;
 
             const utterance = new SpeechSynthesisUtterance(item.text);
             activeUtterance = utterance;
             utterance.lang = 'vi-VN';
-            utterance.rate = parseFloat(speedSelect.value);
+            utterance.rate = rate;
 
-            // Bắt sự kiện chạy từng chữ realtime giống Apple Books
+            let currentWordIdx = 0;
+            const speakStartTime = Date.now();
+
+            const highlightWordAt = (wIdx) => {
+                if (wIdx < 0 || wIdx >= wordSpans.length) return;
+                wordSpans.forEach(s => s.classList.remove('active-word'));
+                wordSpans[wIdx].classList.add('active-word');
+            };
+
+            // Khởi tạo bộ chạy chữ mượt từng từ (vì Siri tiếng Việt chỉ bắn onboundary ở đầu cụm từ)
+            if (wordSpans.length > 0) {
+                highlightWordAt(0);
+                const msPerWord = Math.max(110, Math.round(255 / rate));
+                clearWordTicker();
+                wordTicker = setInterval(() => {
+                    if (!isSpeaking || session !== playSessionId) {
+                        clearWordTicker();
+                        return;
+                    }
+                    if (currentWordIdx + 1 < wordSpans.length) {
+                        currentWordIdx++;
+                        highlightWordAt(currentWordIdx);
+                    }
+                }, msPerWord);
+            }
+
+            // Khi Siri bắn mốc onboundary thực tế -> đồng bộ lại vị trí từ cho chuẩn xác tuyệt đối
             utterance.onboundary = (e) => {
-                if (session !== playSessionId || !isSpeaking) return;
+                if (!isSpeaking || session !== playSessionId) return;
                 if (typeof e.charIndex === 'number' && wordSpans.length > 0) {
                     const cIdx = e.charIndex;
-                    let matchedSpan = null;
                     for (let i = 0; i < wordSpans.length; i++) {
                         const s = parseInt(wordSpans[i].dataset.start, 10);
                         const end = parseInt(wordSpans[i].dataset.end, 10);
                         if (cIdx >= s && cIdx <= end + 1) {
-                            matchedSpan = wordSpans[i];
+                            currentWordIdx = i;
+                            highlightWordAt(i);
                             break;
                         }
-                    }
-                    if (matchedSpan) {
-                        clearWordHighlights();
-                        matchedSpan.classList.add('active-word');
                     }
                 }
             };
 
             utterance.onend = () => {
-                if (!isSpeaking || session !== playSessionId) return;
+                if (!isSpeaking || session !== playSessionId || activeUtterance !== utterance) return;
+                const elapsed = Date.now() - speakStartTime;
+
+                // BẢO VỆ CHỐNG LỖI SAFARI: Nếu đoạn văn dài (> 15 ký tự) mà onend nổ dưới 300ms (do dư chấn cancel cũ), tự động phát lại ngay!
+                if (item.text.length > 15 && elapsed < 300 && retryCount < 2) {
+                    clearWordHighlights();
+                    setTimeout(() => {
+                        if (isSpeaking && session === playSessionId) {
+                            speakItemSafe(idx, session, retryCount + 1);
+                        }
+                    }, 120);
+                    return;
+                }
+
                 clearWordHighlights();
-                speakItemNow(currentIndex + 1, session);
+                speakItemSafe(currentIndex + 1, session, 0);
             };
 
             utterance.onerror = (e) => {
-                if (!isSpeaking || session !== playSessionId) return;
+                if (!isSpeaking || session !== playSessionId || activeUtterance !== utterance) return;
                 if (e.error === 'interrupted' || e.error === 'canceled') return;
-                speakItemNow(currentIndex + 1, session);
+
+                clearWordHighlights();
+                if (retryCount < 2) {
+                    setTimeout(() => {
+                        if (isSpeaking && session === playSessionId) {
+                            speakItemSafe(idx, session, retryCount + 1);
+                        }
+                    }, 150);
+                } else {
+                    speakItemSafe(currentIndex + 1, session, 0);
+                }
             };
 
-            // Đảm bảo Safari không bị kẹt ở trạng thái paused
             window.speechSynthesis.resume();
             window.speechSynthesis.speak(utterance);
-
-            // Bộ canh gác (Watchdog): chống Safari tự pause ngầm khi khóa màn hình lâu
-            if (watchdogTimer) clearInterval(watchdogTimer);
-            watchdogTimer = setInterval(() => {
-                if (!isSpeaking || session !== playSessionId) {
-                    clearInterval(watchdogTimer);
-                    return;
-                }
-                if (window.speechSynthesis.paused) {
-                    window.speechSynthesis.resume();
-                }
-            }, 1000);
         }
 
         function highlightItem(index) {
             document.querySelectorAll('#storyContainer .active-chunk').forEach(el => el.classList.remove('active-chunk'));
-            clearWordHighlights();
             chunkCounter.textContent = displayList.length > 0 ? `${index + 1} / ${displayList.length}` : "0 / 0";
             
             const activeEl = document.getElementById(`item-${index}`);
@@ -911,7 +915,6 @@
 
         document.addEventListener("visibilitychange", () => {
             if (document.visibilityState === "visible" && isSpeaking) {
-                forceIosPlaybackAudioSession();
                 highlightItem(currentIndex);
             }
         });

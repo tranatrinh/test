@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Apple Books Reader - Comet Highlight</title>
+    <title>Apple Books Reader - Siri TTS</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -14,17 +14,19 @@
             --border: #e5e5ea;
             --accent: #007aff;
             --highlight: rgba(0, 122, 255, 0.08);
+            --word-bg: rgba(255, 204, 0, 0.45);
+            --word-text: #000000;
             --reader-font: ui-serif, "New York", "Iowan Old Style", "Charter", "Sitka Text", Georgia, serif;
             --font-size: 19px;
             --font-weight: 400;
         }
 
-        body.theme-original { --bg: #ffffff; --text: #1c1c1e; --muted: #8e8e93; --surface: #f2f2f7; --border: #e5e5ea; --highlight: rgba(0,0,0,0.04); --font-weight: 400; }
-        body.theme-quiet { --bg: #2c2c2e; --text: #d1d1d6; --muted: #8e8e93; --surface: #3a3a3c; --border: #48484a; --highlight: rgba(255,255,255,0.06); --font-weight: 400; }
-        body.theme-paper { --bg: #f4f1ea; --text: #262421; --muted: #7c776f; --surface: #e8e3d9; --border: #dcd6ca; --highlight: rgba(0,0,0,0.05); --font-weight: 400; }
-        body.theme-bold { --bg: #ffffff; --text: #000000; --muted: #6c6c70; --surface: #f2f2f7; --border: #d1d1d6; --highlight: rgba(0,0,0,0.05); --font-weight: 600; }
-        body.theme-calm { --bg: #f6ead4; --text: #382e21; --muted: #8a7962; --surface: #eadbc0; --border: #decba9; --highlight: rgba(56,46,33,0.06); --font-weight: 400; }
-        body.theme-focus { --bg: #fffcf2; --text: #141413; --muted: #827f77; --surface: #f2efe4; --border: #e3dfd3; --highlight: rgba(0,0,0,0.04); --font-weight: 400; }
+        body.theme-original { --bg: #ffffff; --text: #1c1c1e; --muted: #8e8e93; --surface: #f2f2f7; --border: #e5e5ea; --highlight: rgba(0,0,0,0.04); --word-bg: rgba(255, 204, 0, 0.45); --word-text: #000; --font-weight: 400; }
+        body.theme-quiet { --bg: #2c2c2e; --text: #d1d1d6; --muted: #8e8e93; --surface: #3a3a3c; --border: #48484a; --highlight: rgba(255,255,255,0.06); --word-bg: rgba(10, 132, 255, 0.45); --word-text: #fff; --font-weight: 400; }
+        body.theme-paper { --bg: #f4f1ea; --text: #262421; --muted: #7c776f; --surface: #e8e3d9; --border: #dcd6ca; --highlight: rgba(0,0,0,0.05); --word-bg: rgba(235, 175, 50, 0.42); --word-text: #000; --font-weight: 400; }
+        body.theme-bold { --bg: #ffffff; --text: #000000; --muted: #6c6c70; --surface: #f2f2f7; --border: #d1d1d6; --highlight: rgba(0,0,0,0.05); --word-bg: rgba(255, 204, 0, 0.5); --word-text: #000; --font-weight: 600; }
+        body.theme-calm { --bg: #f6ead4; --text: #382e21; --muted: #8a7962; --surface: #eadbc0; --border: #decba9; --highlight: rgba(56,46,33,0.06); --word-bg: rgba(217, 140, 40, 0.38); --word-text: #1c140a; --font-weight: 400; }
+        body.theme-focus { --bg: #fffcf2; --text: #141413; --muted: #827f77; --surface: #f2efe4; --border: #e3dfd3; --highlight: rgba(0,0,0,0.04); --word-bg: rgba(255, 204, 0, 0.45); --word-text: #000; --font-weight: 400; }
 
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body {
@@ -73,27 +75,15 @@
         }
         #storyContainer p.active-chunk { background: var(--highlight); }
 
-        /* HIỆU ỨNG LUỒNG SÁNG SAO BĂNG (COMET TRAIL) */
         .w-tok {
             border-radius: 4px;
-            padding: 2px 1px;
-            transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+            padding: 1px 0;
+            transition: background-color 0.06s ease;
         }
-        /* Từ đang đọc trực tiếp: sáng rực rỡ */
         .w-tok.active-word {
-            background: linear-gradient(90deg, #ffcc00, #ff9500);
-            color: #000000;
-            font-weight: 600;
-            box-shadow: 0 0 12px rgba(255, 204, 0, 0.7);
-        }
-        /* Vệt sáng phía sau (đuôi sao băng) */
-        .w-tok.trail-1 {
-            background: rgba(255, 204, 0, 0.35);
-            color: inherit;
-        }
-        .w-tok.trail-2 {
-            background: rgba(255, 204, 0, 0.18);
-            color: inherit;
+            background-color: var(--word-bg);
+            color: var(--word-text);
+            box-shadow: 0 0 0 2px var(--word-bg);
         }
 
         .bottom-bar {
@@ -157,7 +147,7 @@
         <div style="text-align:center; padding: 70px 20px; color: var(--muted); font-family: -apple-system, sans-serif;">
             <div style="font-size: 44px; margin-bottom: 14px;">📖</div>
             <div style="font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc sách Apple Books</div>
-            <div style="font-size: 14px;">Bấm nút <b>＋</b> góc trái để mở file sách.<br>Hiệu ứng chạy chữ luồng sáng sao băng (Comet Trail) mượt mà.</div>
+            <div style="font-size: 14px;">Bấm nút <b>＋</b> góc trái để mở file sách.<br>Đã fix triệt để lỗi bấm nhảy đoạn bị ngắt 1 chữ và chạy mượt từng từ.</div>
         </div>
     </main>
 
@@ -391,51 +381,14 @@
         let wordTicker = null;
         let jumpTimer = null;
 
-        // --- KÊNH PLAYBACK GIỮ NGẦM ÂM THANH ---
-        function createPlaybackChannelWavUrl() {
-            const sampleRate = 8000;
-            const numSamples = sampleRate * 3;
-            const buffer = new ArrayBuffer(44 + numSamples * 2);
-            const view = new DataView(buffer);
-            const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
-            writeStr(0, 'RIFF'); view.setUint32(4, 36 + numSamples * 2, true); writeStr(8, 'WAVE'); writeStr(12, 'fmt ');
-            view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-            view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
-            view.setUint16(32, 2, true); view.setUint16(34, 16, true); writeStr(36, 'data'); view.setUint32(40, numSamples * 2, true);
-            for (let i = 0; i < numSamples; i++) {
-                const sample = Math.round(Math.sin(2 * Math.PI * 20 * (i / sampleRate)) * 35);
-                view.setInt16(44 + i * 2, sample, true);
-            }
-            return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
-        }
-
-        const mediaCarrierAudio = new Audio(createPlaybackChannelWavUrl());
-        mediaCarrierAudio.loop = true;
-        mediaCarrierAudio.playsInline = true;
-        mediaCarrierAudio.volume = 0.08;
-
-        let audioCtx = null;
+        // --- GIỮ KÊNH PLAYBACK (KHÔNG GỌI LẶP LẠI GÂY XUNG ĐỘT VỚI SIRI KHI CHUYỂN ĐOẠN) ---
+        let audioSessionInitialized = false;
         let wakeLockSentinel = null;
 
-        function forceIosPlaybackAudioSession() {
+        function ensurePlaybackSessionOnce() {
             try {
-                if ('audioSession' in navigator) navigator.audioSession.type = 'playback';
-            } catch (e) {}
-            if (mediaCarrierAudio.paused) mediaCarrierAudio.play().catch(() => {});
-            try {
-                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                if (AudioContextClass) {
-                    if (!audioCtx) {
-                        audioCtx = new AudioContextClass();
-                        const osc = audioCtx.createOscillator();
-                        const gain = audioCtx.createGain();
-                        osc.frequency.value = 15;
-                        gain.gain.value = 0.002;
-                        osc.connect(gain);
-                        gain.connect(audioCtx.destination);
-                        osc.start();
-                    }
-                    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+                if ('audioSession' in navigator && navigator.audioSession.type !== 'playback') {
+                    navigator.audioSession.type = 'playback';
                 }
             } catch (e) {}
 
@@ -445,12 +398,14 @@
                     s.addEventListener('release', () => { wakeLockSentinel = null; });
                 }).catch(() => {});
             }
+            audioSessionInitialized = true;
         }
 
         function releasePlaybackSession() {
-            mediaCarrierAudio.pause();
-            if (audioCtx && audioCtx.state === 'running') audioCtx.suspend().catch(() => {});
-            if (wakeLockSentinel) { wakeLockSentinel.release().catch(() => {}); wakeLockSentinel = null; }
+            if (wakeLockSentinel) {
+                wakeLockSentinel.release().catch(() => {});
+                wakeLockSentinel = null;
+            }
         }
 
         const CHAPTER_REGEX = /^(?:Chương|Hồi|Quyển|Phần|Tiết|Tập|Phiên\s*ngoại|Ngoại\s*truyện|Chapter)\s*[\dIVXLCDM\-]+.*/i;
@@ -744,7 +699,7 @@
             highlightItem(currentIndex);
         }
 
-        // --- HỆ THỐNG ĐỌC COMET TRAIL & KHÔNG KẸT 1 CHỮ ---
+        // --- HỆ THỐNG ĐỌC SIRI CHỐNG NGẮT 1 CHỮ KHI BẤM ĐỔI ĐOẠN & CHẠY CHỮ MƯỢT ---
         function clearWordTicker() {
             if (wordTicker) {
                 clearInterval(wordTicker);
@@ -754,9 +709,7 @@
 
         function clearWordHighlights() {
             clearWordTicker();
-            document.querySelectorAll('.w-tok.active-word, .w-tok.trail-1, .w-tok.trail-2').forEach(el => {
-                el.classList.remove('active-word', 'trail-1', 'trail-2');
-            });
+            document.querySelectorAll('.w-tok.active-word').forEach(el => el.classList.remove('active-word'));
         }
 
         function toggleSpeechPlay() {
@@ -797,8 +750,9 @@
             currentIndex = Math.max(0, Math.min(idx, displayList.length - 1));
             highlightItem(currentIndex);
 
-            forceIosPlaybackAudioSession();
+            ensurePlaybackSessionOnce();
 
+            // Gỡ toàn bộ listener của câu cũ trước khi cancel
             if (activeUtterance) {
                 activeUtterance.onend = null;
                 activeUtterance.onerror = null;
@@ -809,6 +763,7 @@
             const wasSpeakingOrPending = window.speechSynthesis.speaking || window.speechSynthesis.pending;
             window.speechSynthesis.cancel();
 
+            // Nếu Safari đang đọc dở, bắt buộc đợi 140ms cho tầng C++ của WebKit xả hết sự kiện onend giả rồi mới đọc câu mới
             const waitMs = wasSpeakingOrPending ? 140 : 10;
             jumpTimer = setTimeout(() => {
                 if (isSpeaking && currentSession === playSessionId) {
@@ -866,25 +821,16 @@
             let currentWordIdx = 0;
             const speakStartTime = Date.now();
 
-            // HIỆU ỨNG VỆT SÁNG SAO BĂNG (COMET TRAIL) TRƯỢT QUA TỪNG TỪ
-            const applyCometTrailAt = (wIdx) => {
-                if (wordSpans.length === 0) return;
-                wordSpans.forEach(s => s.classList.remove('active-word', 'trail-1', 'trail-2'));
-
-                if (wIdx >= 0 && wIdx < wordSpans.length) {
-                    wordSpans[wIdx].classList.add('active-word');
-                }
-                if (wIdx - 1 >= 0 && wIdx - 1 < wordSpans.length) {
-                    wordSpans[wIdx - 1].classList.add('trail-1');
-                }
-                if (wIdx - 2 >= 0 && wIdx - 2 < wordSpans.length) {
-                    wordSpans[wIdx - 2].classList.add('trail-2');
-                }
+            const highlightWordAt = (wIdx) => {
+                if (wIdx < 0 || wIdx >= wordSpans.length) return;
+                wordSpans.forEach(s => s.classList.remove('active-word'));
+                wordSpans[wIdx].classList.add('active-word');
             };
 
+            // Khởi tạo bộ chạy chữ mượt từng từ (vì Siri tiếng Việt chỉ bắn onboundary ở đầu cụm từ)
             if (wordSpans.length > 0) {
-                applyCometTrailAt(0);
-                const msPerWord = Math.max(95, Math.round(230 / rate));
+                highlightWordAt(0);
+                const msPerWord = Math.max(110, Math.round(255 / rate));
                 clearWordTicker();
                 wordTicker = setInterval(() => {
                     if (!isSpeaking || session !== playSessionId) {
@@ -893,11 +839,12 @@
                     }
                     if (currentWordIdx + 1 < wordSpans.length) {
                         currentWordIdx++;
-                        applyCometTrailAt(currentWordIdx);
+                        highlightWordAt(currentWordIdx);
                     }
                 }, msPerWord);
             }
 
+            // Khi Siri bắn mốc onboundary thực tế -> đồng bộ lại vị trí từ cho chuẩn xác tuyệt đối
             utterance.onboundary = (e) => {
                 if (!isSpeaking || session !== playSessionId) return;
                 if (typeof e.charIndex === 'number' && wordSpans.length > 0) {
@@ -907,7 +854,7 @@
                         const end = parseInt(wordSpans[i].dataset.end, 10);
                         if (cIdx >= s && cIdx <= end + 1) {
                             currentWordIdx = i;
-                            applyCometTrailAt(i);
+                            highlightWordAt(i);
                             break;
                         }
                     }
@@ -918,6 +865,7 @@
                 if (!isSpeaking || session !== playSessionId || activeUtterance !== utterance) return;
                 const elapsed = Date.now() - speakStartTime;
 
+                // BẢO VỆ CHỐNG LỖI SAFARI: Nếu đoạn văn dài (> 15 ký tự) mà onend nổ dưới 300ms (do dư chấn cancel cũ), tự động phát lại ngay!
                 if (item.text.length > 15 && elapsed < 300 && retryCount < 2) {
                     clearWordHighlights();
                     setTimeout(() => {
@@ -954,7 +902,6 @@
 
         function highlightItem(index) {
             document.querySelectorAll('#storyContainer .active-chunk').forEach(el => el.classList.remove('active-chunk'));
-            clearWordHighlights();
             chunkCounter.textContent = displayList.length > 0 ? `${index + 1} / ${displayList.length}` : "0 / 0";
             
             const activeEl = document.getElementById(`item-${index}`);

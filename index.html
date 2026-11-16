@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Apple Books Reader - Comet Trail TTS</title>
+    <title>Apple Books Reader - Background & Comet Trail</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -73,7 +73,7 @@
         }
         #storyContainer p.active-chunk { background: var(--highlight); }
 
-        /* HIỆU ỨNG LUỒNG SÁNG SAO BĂNG (COMET TRAIL) MƯỢT MÀ */
+        /* Hiệu ứng vệt sáng sao băng (Comet Trail) mượt mà */
         .w-tok {
             border-radius: 4px;
             padding: 2px 1px;
@@ -155,7 +155,7 @@
         <div style="text-align:center; padding: 70px 20px; color: var(--muted); font-family: -apple-system, sans-serif;">
             <div style="font-size: 44px; margin-bottom: 14px;">📖</div>
             <div style="font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc sách Apple Books</div>
-            <div style="font-size: 14px;">Bấm nút <b>＋</b> góc trái để mở file sách.<br>Hỗ trợ chạy ngầm vượt nút gạt tắt chuông và hiệu ứng sao băng mượt mà.</div>
+            <div style="font-size: 14px;">Bấm nút <b>＋</b> góc trái để mở file sách.<br>Đã tối ưu chạy ngầm hoàn hảo khi out ứng dụng và khóa màn hình.</div>
         </div>
     </main>
 
@@ -316,7 +316,7 @@
                 const tx = db.transaction(STORE_NAME, "readwrite");
                 tx.objectStore(STORE_NAME).delete(id);
                 tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
+                tx.onerror = () => reject(req.error);
             });
         }
 
@@ -386,9 +386,10 @@
         let isSpeaking = false;
         let playSessionId = 0;
         let activeUtterance = null;
+        let wordTicker = null;
         let jumpTimer = null;
 
-        // --- BỎ QUA NÚT GẠT TẮT CHUÔNG (SILENT SWITCH BYPASS) & CHẠY NGẦM ---
+        // --- CƠ CHẾ CHẠY NGẦM & VƯỢT NÚT GẠT TẮT CHUÔNG TRÊN iOS ---
         function createPlaybackChannelWavUrl() {
             const sampleRate = 8000;
             const numSamples = sampleRate * 3;
@@ -400,7 +401,7 @@
             view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
             view.setUint16(32, 2, true); view.setUint16(34, 16, true); writeStr(36, 'data'); view.setUint32(40, numSamples * 2, true);
             for (let i = 0; i < numSamples; i++) {
-                const sample = Math.round(Math.sin(2 * Math.PI * 20 * (i / sampleRate)) * 35);
+                const sample = Math.round(Math.sin(2 * Math.PI * 20 * (i / sampleRate)) * 45);
                 view.setInt16(44 + i * 2, sample, true);
             }
             return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
@@ -409,7 +410,7 @@
         const mediaCarrierAudio = new Audio(createPlaybackChannelWavUrl());
         mediaCarrierAudio.loop = true;
         mediaCarrierAudio.playsInline = true;
-        mediaCarrierAudio.volume = 0.08;
+        mediaCarrierAudio.volume = 0.05;
 
         let audioCtx = null;
         let wakeLockSentinel = null;
@@ -426,8 +427,8 @@
                         audioCtx = new AudioContextClass();
                         const osc = audioCtx.createOscillator();
                         const gain = audioCtx.createGain();
-                        osc.frequency.value = 15;
-                        gain.gain.value = 0.002;
+                        osc.frequency.value = 20;
+                        gain.gain.value = 0.003;
                         osc.connect(gain);
                         gain.connect(audioCtx.destination);
                         osc.start();
@@ -741,7 +742,7 @@
             highlightItem(currentIndex);
         }
 
-        // --- ĐIỀU PHỐI COMET TRAIL & CHỐNG NGẮT 1 CHỮ ---
+        // --- HỆ THỐNG ĐỌC COMET TRAIL & KHÔNG KẸT 1 CHỮ ---
         function clearWordHighlights() {
             document.querySelectorAll('.w-tok.active-word, .w-tok.trail-1, .w-tok.trail-2').forEach(el => {
                 el.classList.remove('active-word', 'trail-1', 'trail-2');
@@ -757,6 +758,7 @@
             playSessionId++;
             isSpeaking = false;
             if (jumpTimer) { clearTimeout(jumpTimer); jumpTimer = null; }
+            if (wordTicker) { clearInterval(wordTicker); wordTicker = null; }
             clearWordHighlights();
 
             if (activeUtterance) {
@@ -779,6 +781,7 @@
             const currentSession = playSessionId;
 
             if (jumpTimer) { clearTimeout(jumpTimer); jumpTimer = null; }
+            if (wordTicker) { clearInterval(wordTicker); wordTicker = null; }
             clearWordHighlights();
 
             isSpeaking = true;
@@ -855,7 +858,6 @@
             let currentWordIdx = 0;
             const speakStartTime = Date.now();
 
-            // Hiệu ứng vệt sáng sao băng (Comet Trail) trượt mượt qua từng từ
             const applyCometTrailAt = (wIdx) => {
                 if (wordSpans.length === 0) return;
                 wordSpans.forEach(s => s.classList.remove('active-word', 'trail-1', 'trail-2'));
@@ -871,17 +873,16 @@
                 }
             };
 
-            // Tiến trình bám sát độ dài thực tế của câu
-            let progressTimer = null;
             if (wordSpans.length > 0) {
                 applyCometTrailAt(0);
-                // Tính toán thời gian phân bổ đều cho từng từ dựa vào tốc độ đọc
-                const totalEstimatedDurationMs = Math.max(800, (item.text.length * 75) / rate);
+                const totalEstimatedDurationMs = Math.max(900, (item.text.length * 85) / rate);
                 const stepMs = totalEstimatedDurationMs / wordSpans.length;
+                if (wordTicker) clearInterval(wordTicker);
 
-                progressTimer = setInterval(() => {
+                wordTicker = setInterval(() => {
                     if (!isSpeaking || session !== playSessionId) {
-                        clearInterval(progressTimer);
+                        clearInterval(wordTicker);
+                        wordTicker = null;
                         return;
                     }
                     if (currentWordIdx + 1 < wordSpans.length) {
@@ -908,7 +909,7 @@
             };
 
             const cleanupAndNext = () => {
-                if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
+                if (wordTicker) { clearInterval(wordTicker); wordTicker = null; }
                 clearWordHighlights();
             };
 
@@ -966,6 +967,7 @@
 
         document.addEventListener("visibilitychange", () => {
             if (document.visibilityState === "visible" && isSpeaking) {
+                forceIosPlaybackAudioSession();
                 highlightItem(currentIndex);
             }
         });

@@ -579,7 +579,7 @@
         }
 
         function onChapterChange() {
-            const wasPlaying = isPlaying;
+            const wasPlaying = isSpeaking;
             stopSpeech();
             renderChapter(parseInt(chapterSelect.value, 10), 0);
             saveProgress();
@@ -596,23 +596,29 @@
 
             let html = `<h1 class="chap-heading">${chap.title}</h1>`;
             
-            // Hàm làm sạch chuỗi triệt để để so sánh chống lặp tiêu đề
             const cleanText = (str) => str.toLowerCase().replace(/[\s\p{P}]/gu, '');
             const cleanedChapTitle = cleanText(chap.title);
 
+            let firstValidPara = true;
             for (let i = 0; i < chunks.length; i++) {
                 const cleanedChunk = cleanText(chunks[i]);
-                // Nếu đoạn văn trùng khớp hoặc chứa tiêu đề chương thì ẩn đi để tránh lặp
-                const isDupTitle = (cleanedChunk === cleanedChapTitle || (i === 0 && cleanedChunk.includes(cleanedChapTitle) && cleanedChunk.length - cleanedChapTitle.length < 15));
-                const styleAttr = isDupTitle ? 'style="display:none;"' : '';
-                html += `<p id="para-${i}" ${styleAttr} onclick="jumpToChunk(${i})">${chunks[i]}</p>`;
+                // Lọc bỏ triệt để đoạn văn bị trùng lặp với tiêu đề chương ở đầu
+                const isDupTitle = firstValidPara && (cleanedChunk === cleanedChapTitle || cleanedChunk.includes(cleanedChapTitle) || cleanedChapTitle.includes(cleanedChunk));
+                
+                if (isDupTitle) {
+                    firstValidPara = false;
+                    continue; // Bỏ qua không hiển thị đoạn trùng
+                }
+                if (cleanedChunk) firstValidPara = false;
+
+                html += `<p id="para-${i}" onclick="jumpToChunk(${i})">${chunks[i]}</p>`;
             }
             storyContainer.innerHTML = html;
             storyContainer.scrollTop = 0;
             highlightParagraph(currentChunkIndex);
         }
 
-        // --- HỆ THỐNG ĐỌC TRỰC TIẾP SIRI (FIX LỖI NGẮT ĐOẠN 1 TỪ) ---
+        // --- HỆ THỐNG ĐỌC TRỰC TIẾP SIRI (FIX TRIỆT ĐỂ LỖI NGẮT ĐOẠN 1 TỪ) ---
         function toggleSpeechPlay() {
             if (isSpeaking) stopSpeech();
             else startSpeechPlay(currentChunkIndex);
@@ -629,7 +635,9 @@
 
         function jumpToChunk(idx) {
             stopSpeech();
-            startSpeechPlay(idx);
+            setTimeout(() => {
+                startSpeechPlay(idx);
+            }, 150); // Delay an toàn để Safari giải phóng luồng cũ hoàn toàn
         }
 
         function startSpeechPlay(startIndex) {
@@ -643,7 +651,9 @@
             playToggleBtn.innerHTML = "■ Dừng nghe";
             currentChunkIndex = startIndex;
             
-            playNextUtterance(currentChunkIndex, currentSession);
+            setTimeout(() => {
+                playNextUtterance(currentChunkIndex, currentSession);
+            }, 100);
         }
 
         function updateMediaSession() {
@@ -688,12 +698,16 @@
 
             utterance.onend = () => {
                 if (isSpeaking && session === playSessionId) {
-                    playNextUtterance(currentChunkIndex + 1, session);
+                    setTimeout(() => {
+                        playNextUtterance(currentChunkIndex + 1, session);
+                    }, 50);
                 }
             };
             utterance.onerror = () => {
                 if (isSpeaking && session === playSessionId) {
-                    playNextUtterance(currentChunkIndex + 1, session);
+                    setTimeout(() => {
+                        playNextUtterance(currentChunkIndex + 1, session);
+                    }, 100);
                 }
             };
 

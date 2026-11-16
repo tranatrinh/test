@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI Story Reader - Pure Browser TTS</title>
+    <title>AI Story Reader - Robust EPUB Parser</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -89,8 +89,8 @@
     <main id="storyContainer">
         <div style="text-align:center; padding: 40px 16px; color: var(--text-muted); font-family: sans-serif;">
             <div style="font-size: 40px; margin-bottom: 12px;">🎧</div>
-            <div style="font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc truyện trực tiếp</div>
-            <div style="font-size: 13px;">Bấm <b>＋ Mở file</b> để bắt đầu. Không cần bật máy tính hay server nào cả.</div>
+            <div style="font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc truyện chuẩn cấu trúc</div>
+            <div style="font-size: 13px;">Bấm <b>＋ Mở file</b> để phân tích chính xác từng chương.</div>
         </div>
     </main>
 
@@ -142,11 +142,12 @@
             return valid;
         }
 
+        // Cơ chế phân tích chuẩn theo luồng OPF/Spine của EPUB
         fileInput.addEventListener('change', async (e) => {
             const file = e.target.files.item(0);
             if (!file) return;
 
-            status.textContent = `⏳ Đang phân tích mục lục chuẩn xác...`;
+            status.textContent = `⏳ Đang đọc cấu trúc file...`;
             try {
                 chapters = [];
                 if (file.name.toLowerCase().endsWith('.txt')) {
@@ -154,15 +155,18 @@
                     const lines = text.split(/\r?\n/);
                     let currentTitle = "Chương 1";
                     let currentParas = [];
+                    let chapCount = 1;
 
                     for (let line of lines) {
                         let trimmed = line.trim();
-                        if (/^(?:Chương|Hồi|Chapter|Phần)\s+\d+/i.test(trimmed) && trimmed.length < 80) {
+                        // Chỉ nhận diện khi từ khóa Chương/Hồi nằm ở đầu dòng một cách rõ ràng
+                        if (/^(?:Chương|Hồi|Chapter|Phần)\s+\d+/i.test(trimmed) && trimmed.length < 60) {
                             if (currentParas.length > 0) {
                                 chapters.push({ title: currentTitle, paragraphs: currentParas });
                                 currentParas = [];
                             }
                             currentTitle = trimmed;
+                            chapCount++;
                         } else if (trimmed) {
                             currentParas.push(trimmed);
                         }
@@ -176,27 +180,75 @@
                 } else if (file.name.toLowerCase().endsWith('.epub')) {
                     const zip = await JSZip.loadAsync(file);
                     const parser = new DOMParser();
-                    let fileKeys = Object.keys(zip.files).filter(k => /\.(html|xhtml|htm)$/i.test(k)).sort();
 
-                    for (let i = 0; i < fileKeys.length; i++) {
-                        const content = await zip.files[fileKeys[i]].async("text");
-                        const doc = parser.parseFromString(content, "text/html");
-                        doc.querySelectorAll("script, style").forEach(el => el.remove());
-                        const textContent = doc.body ? doc.body.textContent : doc.textContent;
-                        const paras = processRawTextToChunks(textContent);
-                        
-                        if (paras.length > 0) {
-                            let chapTitle = doc.querySelector("h1, h2, h3")?.textContent?.trim();
-                            if (!chapTitle || chapTitle.length > 60) {
-                                chapTitle = `Chương ${chapters.length + 1}`;
+                    // Tìm file container.xml để lấy đường dẫn tệp .opf chính xác
+                    let opfPath = "";
+                    const containerFile = zip.file("META-INF/container.xml");
+                    if (containerFile) {
+                        const containerXml = await containerFile.async("text");
+                        const containerDoc = parser.parseFromString(containerXml, "text/xml");
+                        const rootfile = containerDoc.getElementsByTagName("rootfile")[0];
+                        if (rootfile) opfPath = rootfile.getAttribute("full-path");
+                    }
+
+                    let spineIds = [];
+                    let manifest = {};
+
+                    if (opfPath && zip.file(opfPath)) {
+                        const opfFolder = opfPath.includes('/') ? opfPath.substring(0, opfPath.lastIndexOf('/') + 1) : "";
+                        const opfXml = await zip.file(opfPath).async("text");
+                        const opfDoc = parser.parseFromString(opfXml, "text/xml");
+
+                        // Đọc manifest (danh sách tài nguyên)
+                        const items = opfDoc.getElementsByTagName("item");
+                        for (let item of items) {
+                            const id = item.getAttribute("id");
+                            const href = item.getAttribute("href");
+                            if (id && href) {
+                                manifest[id] = opfFolder + href;
                             }
-                            chapters.push({
-                                title: chapTitle,
-                                paragraphs: paras
-                            });
+                        }
+
+                        // Đọc spine (thứ tự chính xác các chương sách)
+                        const itemrefs = opfDoc.getElementsByTagName("itemref");
+                        for (let ref of itemrefs) {
+                            const idref = ref.getAttribute("idref");
+                            if (idref && manifest[idref]) {
+                                spineIds.push(manifest[idref]);
+                            }
                         }
                     }
-                    if (chapters.length === 0) throw new Error("Không tìm thấy nội dung hợp lệ trong file EPUB.");
+
+                    // Nếu không đọc được spine, quét toàn bộ file html theo tên sắp xếp chuẩn
+                    if (spineIds.length === 0) {
+                        spineIds = Object.keys(zip.files).filter(k => /\.(html|xhtml|htm)$/i.test(k)).sort();
+                    }
+
+                    // Duyệt tuần tự theo đúng thứ tự chuẩn của sách
+                    for (let i = 0; i < spineIds.length; i++) {
+                        const path = spineIds[i];
+                        const zipFile = zip.file(path) || zip.file(decodeURIComponent(path));
+                        if (zipFile) {
+                            const content = await zipFile.async("text");
+                            const doc = parser.parseFromString(content, "text/html");
+                            doc.querySelectorAll("script, style").forEach(el => el.remove());
+                            const textContent = doc.body ? doc.body.textContent : doc.textContent;
+                            const paras = processRawTextToChunks(textContent);
+
+                            if (paras.length > 2) { // Bỏ qua các trang rỗng hoặc trang bìa quá ngắn
+                                let titleEl = doc.querySelector("h1, h2, h3, title");
+                                let chapTitle = titleEl ? titleEl.textContent.trim() : "";
+                                if (!chapTitle || chapTitle.length > 50 || /cover|title|mục lục/i.test(chapTitle)) {
+                                    chapTitle = `Chương ${chapters.length + 1}`;
+                                }
+                                chapters.push({
+                                    title: chapTitle,
+                                    paragraphs: paras
+                                });
+                            }
+                        }
+                    }
+                    if (chapters.length === 0) throw new Error("Không tìm thấy chương hợp lệ trong file EPUB.");
                 }
 
                 chapterSelect.innerHTML = "";
@@ -209,9 +261,9 @@
                 document.getElementById("chapterBar").style.display = "flex";
 
                 renderChapter(0, 0);
-                status.textContent = `✅ Đã tải xong (${chapters.length} chương)! Sẵn sàng nghe.`;
+                status.textContent = `✅ Đã tải xong ${chapters.length} chương theo đúng thứ tự!`;
             } catch (err) {
-                status.textContent = `❌ Lỗi đọc file: ${err.message}`;
+                status.textContent = `❌ Lỗi phân tích file: ${err.message}`;
             }
         });
 

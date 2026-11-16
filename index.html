@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI Story Reader - Perfect TOC</title>
+    <title>AI Story Reader - Pure Browser TTS</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -28,11 +28,11 @@
         }
         .brand { font-weight: 700; font-size: 15px; color: var(--accent); display: flex; align-items: center; gap: 6px; }
         .pill-btn {
-            background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
-            border-radius: 999px; padding: 6px 11px; font-size: 12px; font-weight: 600; cursor: pointer;
+            background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.35);
+            border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
             display: inline-flex; align-items: center; gap: 4px;
         }
-        .pill-accent { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border-color: rgba(16, 185, 129, 0.35); }
+        .pill-btn:active { opacity: 0.75; }
         .chapter-bar {
             background: #0f1523; padding: 8px 14px; border-bottom: 1px solid var(--border);
             display: flex; align-items: center; gap: 8px; flex-shrink: 0;
@@ -75,7 +75,7 @@
     <header>
         <div class="brand">📖 AI Story Reader</div>
         <div class="header-actions">
-            <label class="pill-btn pill-accent">
+            <label class="pill-btn">
                 ＋ Mở file (.txt/.epub)
                 <input type="file" id="fileInput" accept=".txt,.epub" style="display:none;" onclick="this.value=null;">
             </label>
@@ -89,8 +89,8 @@
     <main id="storyContainer">
         <div style="text-align:center; padding: 40px 16px; color: var(--text-muted); font-family: sans-serif;">
             <div style="font-size: 40px; margin-bottom: 12px;">🎧</div>
-            <div style="font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc truyện & văn bản</div>
-            <div style="font-size: 13px;">Bấm <b>＋ Mở file</b> để bắt đầu. Hệ thống sẽ phân tích mục lục chuẩn xác.</div>
+            <div style="font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc truyện trực tiếp</div>
+            <div style="font-size: 13px;">Bấm <b>＋ Mở file</b> để bắt đầu. Không cần bật máy tính hay server nào cả.</div>
         </div>
     </main>
 
@@ -109,7 +109,7 @@
             </select>
 
             <button class="auto-play-btn" id="playToggleBtn" onclick="toggleSpeechPlay()">
-                🔊 Nghe trang (Auto-play)
+                🔊 Nghe trang (Instant Play)
             </button>
         </div>
     </footer>
@@ -146,53 +146,54 @@
             const file = e.target.files.item(0);
             if (!file) return;
 
-            status.textContent = `⏳ Đang phân tích file chuẩn xác...`;
+            status.textContent = `⏳ Đang phân tích mục lục chuẩn xác...`;
             try {
                 chapters = [];
                 if (file.name.toLowerCase().endsWith('.txt')) {
                     const text = await file.text();
-                    // Regex chuẩn chỉ bắt dòng bắt đầu bằng từ Chương hoặc Hồi (không bị nhảy cóc)
-                    const chapterSplits = text.split(/(?=^(?:Chương|Hồi|Chapter)\s+\d+[:\s])/gim);
-                    
-                    if (chapterSplits.length > 1) {
-                        chapterSplits.forEach((chapText, idx) => {
-                            const trimmed = chapText.trim();
-                            if (trimmed) {
-                                const firstLine = trimmed.split('\n')[0].substring(0, 60);
-                                chapters.push({
-                                    title: /^(?:Chương|Hồi|Chapter)\s+\d+/i.test(firstLine) ? firstLine : `Chương ${idx + 1}`,
-                                    paragraphs: processRawTextToChunks(trimmed)
-                                });
+                    const lines = text.split(/\r?\n/);
+                    let currentTitle = "Chương 1";
+                    let currentParas = [];
+
+                    for (let line of lines) {
+                        let trimmed = line.trim();
+                        if (/^(?:Chương|Hồi|Chapter|Phần)\s+\d+/i.test(trimmed) && trimmed.length < 80) {
+                            if (currentParas.length > 0) {
+                                chapters.push({ title: currentTitle, paragraphs: currentParas });
+                                currentParas = [];
                             }
-                        });
-                    } else {
-                        chapters.push({
-                            title: file.name,
-                            paragraphs: processRawTextToChunks(text)
-                        });
+                            currentTitle = trimmed;
+                        } else if (trimmed) {
+                            currentParas.push(trimmed);
+                        }
+                    }
+                    if (currentParas.length > 0) {
+                        chapters.push({ title: currentTitle, paragraphs: currentParas });
+                    }
+                    if (chapters.length === 0) {
+                        chapters.push({ title: file.name, paragraphs: processRawTextToChunks(text) });
                     }
                 } else if (file.name.toLowerCase().endsWith('.epub')) {
                     const zip = await JSZip.loadAsync(file);
                     const parser = new DOMParser();
+                    let fileKeys = Object.keys(zip.files).filter(k => /\.(html|xhtml|htm)$/i.test(k)).sort();
 
-                    for (let filename of Object.keys(zip.files).sort()) {
-                        if (filename.endsWith('.html') || filename.endsWith('.xhtml') || filename.endsWith('.htm')) {
-                            const content = await zip.files[filename].async("text");
-                            const doc = parser.parseFromString(content, "text/html");
-                            doc.querySelectorAll("script, style").forEach(el => el.remove());
-                            const textContent = doc.body ? doc.body.textContent : doc.textContent;
-                            const paras = processRawTextToChunks(textContent);
-                            
-                            if (paras.length > 0) {
-                                let chapTitle = doc.querySelector("h1, h2, h3")?.textContent?.trim();
-                                if (!chapTitle || chapTitle.length > 60) {
-                                    chapTitle = paras[0].length < 50 ? paras[0] : `Chương ${chapters.length + 1}`;
-                                }
-                                chapters.push({
-                                    title: chapTitle,
-                                    paragraphs: paras
-                                });
+                    for (let i = 0; i < fileKeys.length; i++) {
+                        const content = await zip.files[fileKeys[i]].async("text");
+                        const doc = parser.parseFromString(content, "text/html");
+                        doc.querySelectorAll("script, style").forEach(el => el.remove());
+                        const textContent = doc.body ? doc.body.textContent : doc.textContent;
+                        const paras = processRawTextToChunks(textContent);
+                        
+                        if (paras.length > 0) {
+                            let chapTitle = doc.querySelector("h1, h2, h3")?.textContent?.trim();
+                            if (!chapTitle || chapTitle.length > 60) {
+                                chapTitle = `Chương ${chapters.length + 1}`;
                             }
+                            chapters.push({
+                                title: chapTitle,
+                                paragraphs: paras
+                            });
                         }
                     }
                     if (chapters.length === 0) throw new Error("Không tìm thấy nội dung hợp lệ trong file EPUB.");
@@ -208,7 +209,7 @@
                 document.getElementById("chapterBar").style.display = "flex";
 
                 renderChapter(0, 0);
-                status.textContent = `✅ Đã tải xong (${chapters.length} chương)! Bấm "🔊 Nghe trang" để bắt đầu.`;
+                status.textContent = `✅ Đã tải xong (${chapters.length} chương)! Sẵn sàng nghe.`;
             } catch (err) {
                 status.textContent = `❌ Lỗi đọc file: ${err.message}`;
             }
@@ -237,11 +238,6 @@
         }
 
         function toggleSpeechPlay() {
-            if (!('speechSynthesis' in window)) {
-                alert("Trình duyệt của bạn không hỗ trợ đọc giọng nói!");
-                return;
-            }
-
             if (isSpeaking) {
                 stopSpeech("⏸ Đã tạm dừng.");
             } else {
@@ -255,7 +251,7 @@
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
             }
-            playToggleBtn.innerHTML = "🔊 Nghe trang (Auto-play)";
+            playToggleBtn.innerHTML = "🔊 Nghe trang (Instant Play)";
             if (msg) status.textContent = msg;
         }
 
@@ -272,17 +268,12 @@
             }
 
             silentAudio.play().catch(() => {});
-
-            if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-            }
-
             isSpeaking = true;
-            playToggleBtn.innerHTML = "■ Dừng đọc (Đang nghe trang)";
+            playToggleBtn.innerHTML = "■ Dừng đọc (Đang phát)";
             currentChunkIndex = startIndex;
 
             updateMediaSession();
-            playNextUtterance(currentChunkIndex);
+            playNextChunk(currentChunkIndex);
         }
 
         function updateMediaSession() {
@@ -298,14 +289,14 @@
             }
         }
 
-        function playNextUtterance(idx) {
+        function playNextChunk(idx) {
             if (!isSpeaking || idx >= chunks.length) {
                 if (idx >= chunks.length) {
                     if (currentChapterIndex + 1 < chapters.length) {
                         currentChapterIndex++;
                         chapterSelect.value = currentChapterIndex;
                         renderChapter(currentChapterIndex, 0);
-                        playNextUtterance(0);
+                        playNextChunk(0);
                         return;
                     } else {
                         stopSpeech("✅ Đã đọc xong toàn bộ truyện!");
@@ -319,20 +310,16 @@
             status.textContent = `🔊 [${chapters[currentChapterIndex].title}] - Đoạn ${idx + 1}/${chunks.length}`;
             updateMediaSession();
 
-            const utterance = new SpeechSynthesisUtterance(chunks[idx]);
+            const text = chunks[idx];
+            const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'vi-VN';
             utterance.rate = parseFloat(speedSelect.value);
 
             utterance.onend = () => {
-                if (isSpeaking) {
-                    playNextUtterance(currentChunkIndex + 1);
-                }
+                if (isSpeaking) playNextChunk(currentChunkIndex + 1);
             };
-
             utterance.onerror = () => {
-                if (isSpeaking) {
-                    playNextUtterance(currentChunkIndex + 1);
-                }
+                if (isSpeaking) playNextChunk(currentChunkIndex + 1);
             };
 
             window.speechSynthesis.speak(utterance);

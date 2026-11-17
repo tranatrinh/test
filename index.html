@@ -89,13 +89,13 @@
             background: linear-gradient(100deg, #d9f5ff 0%, #66d9ff 42%, #168cff 100%);
             color: #03182d;
             font-weight: 700;
-            box-shadow: 0 0 8px rgba(48, 170, 255, 0.65);
-            text-shadow: 0 0 3px rgba(255, 255, 255, 0.45);
+            box-shadow: 0 0 5px rgba(48, 170, 255, 0.48);
+            text-shadow: none;
         }
         .w-tok.trail-1 {
             background: rgba(48, 184, 255, 0.42);
             color: inherit;
-            box-shadow: 0 0 4px rgba(48, 184, 255, 0.28);
+            box-shadow: none;
         }
         .w-tok.trail-2 {
             background: rgba(48, 184, 255, 0.23);
@@ -894,6 +894,8 @@
             audioPlayer.onended = null;
             audioPlayer.onerror = null;
             audioPlayer.ontimeupdate = null;
+            audioPlayer.onloadedmetadata = null;
+            audioPlayer.onseeked = null;
 
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
@@ -1009,41 +1011,42 @@
                 lastHighlightedWordIdx = -999;
                 applyCometTrailToSpanList(wordSpans, curSub.startWordIdx);
 
-                // Vòng lặp 60fps nội suy vị trí chữ theo trọng số độ dài từ & thời gian thực của file MP3
-                const syncCometFrame = () => {
+                // Đồng bộ theo sự kiện timeupdate của audio (không chạy vòng lặp 60fps).
+                // Cách này nhẹ hơn đáng kể trên máy tính và ổn định hơn với Safari/WebKit.
+                const syncCometFromAudio = () => {
                     if (!isSpeaking || session !== playSessionId) return;
                     const dur = audioPlayer.duration;
                     const cur = audioPlayer.currentTime;
-                    if (dur && isFinite(dur) && dur > 0.05) {
-                        // Bù 0.04s khoảng lặng đầu file MP3 để vệt sáng khớp miệng đọc
-                        const effectiveRatio = Math.min(0.999, Math.max(0, (cur - 0.03) / Math.max(0.1, dur - 0.08)));
-                        let matchedGlobalIdx = curSub.startWordIdx;
-                        for (let k = 0; k < curSub.wordThresholds.length; k++) {
-                            const wt = curSub.wordThresholds[k];
-                            if (effectiveRatio >= wt.startRatio && effectiveRatio <= wt.endRatio) {
-                                matchedGlobalIdx = wt.globalWordIdx;
-                                break;
-                            }
+                    if (!Number.isFinite(dur) || dur <= 0.05) return;
+
+                    const effectiveRatio = Math.min(
+                        0.999,
+                        Math.max(0, (cur - 0.03) / Math.max(0.1, dur - 0.08))
+                    );
+
+                    // Chọn từ có mốc bắt đầu gần nhất đã đi qua.
+                    // Không reset về từ đầu đoạn trong khoảng nghỉ giữa hai từ.
+                    let matchedGlobalIdx = curSub.startWordIdx;
+                    for (let k = 0; k < curSub.wordThresholds.length; k++) {
+                        const wt = curSub.wordThresholds[k];
+                        if (effectiveRatio >= wt.startRatio) {
+                            matchedGlobalIdx = wt.globalWordIdx;
+                        } else {
+                            break;
                         }
-                        applyCometTrailToSpanList(wordSpans, matchedGlobalIdx);
                     }
-                    if (!audioPlayer.paused && !audioPlayer.ended) {
-                        rafId = requestAnimationFrame(syncCometFrame);
-                    }
+                    applyCometTrailToSpanList(wordSpans, matchedGlobalIdx);
                 };
 
                 audioPlayer.onplay = () => {
                     if (!isSpeaking || session !== playSessionId) return;
                     stopCometAnimationLoop();
-                    rafId = requestAnimationFrame(syncCometFrame);
+                    syncCometFromAudio();
                 };
 
-                audioPlayer.ontimeupdate = () => {
-                    if (!isSpeaking || session !== playSessionId) return;
-                    if (!rafId && !audioPlayer.paused) {
-                        rafId = requestAnimationFrame(syncCometFrame);
-                    }
-                };
+                audioPlayer.ontimeupdate = syncCometFromAudio;
+                audioPlayer.onloadedmetadata = syncCometFromAudio;
+                audioPlayer.onseeked = syncCometFromAudio;
 
                 audioPlayer.onended = () => {
                     if (!isSpeaking || session !== playSessionId) return;

@@ -89,16 +89,13 @@
             background: linear-gradient(100deg, #d9f5ff 0%, #66d9ff 42%, #168cff 100%);
             color: #03182d;
             font-weight: 700;
-            box-shadow:
-                0 0 5px rgba(160, 231, 255, 0.95),
-                0 0 13px rgba(48, 170, 255, 0.9),
-                0 0 23px rgba(0, 119, 255, 0.55);
-            text-shadow: 0 0 5px rgba(255, 255, 255, 0.65);
+            box-shadow: 0 0 8px rgba(48, 170, 255, 0.65);
+            text-shadow: 0 0 3px rgba(255, 255, 255, 0.45);
         }
         .w-tok.trail-1 {
             background: rgba(48, 184, 255, 0.42);
             color: inherit;
-            box-shadow: 0 0 9px rgba(48, 184, 255, 0.42);
+            box-shadow: 0 0 4px rgba(48, 184, 255, 0.28);
         }
         .w-tok.trail-2 {
             background: rgba(48, 184, 255, 0.23);
@@ -847,13 +844,26 @@
         }
 
         let lastHighlightedWordIdx = -999;
+        let lastHighlightedWordSpans = null;
+
+        // Chỉ cập nhật tối đa 4 từ cũ + 4 từ mới, không quét toàn bộ đoạn văn
+        // mỗi khi giọng đọc chuyển sang từ tiếp theo (tránh khựng với chương dài).
         function applyCometTrailToSpanList(wordSpans, activeIdx) {
-            if (!wordSpans || wordSpans.length === 0 || activeIdx === lastHighlightedWordIdx) return;
+            if (!wordSpans || wordSpans.length === 0 || !Number.isInteger(activeIdx)) return;
+            if (wordSpans === lastHighlightedWordSpans && activeIdx === lastHighlightedWordIdx) return;
+
+            if (lastHighlightedWordSpans) {
+                const oldSpans = lastHighlightedWordSpans;
+                const oldStart = Math.max(0, lastHighlightedWordIdx - 3);
+                const oldEnd = Math.min(oldSpans.length - 1, lastHighlightedWordIdx);
+                for (let i = oldStart; i <= oldEnd; i++) {
+                    oldSpans[i].classList.remove('active-word', 'trail-1', 'trail-2', 'trail-3');
+                }
+            }
+
+            lastHighlightedWordSpans = wordSpans;
             lastHighlightedWordIdx = activeIdx;
 
-            for (let i = 0; i < wordSpans.length; i++) {
-                wordSpans[i].classList.remove('active-word', 'trail-1', 'trail-2', 'trail-3');
-            }
             if (activeIdx >= 0 && activeIdx < wordSpans.length) {
                 wordSpans[activeIdx].classList.add('active-word');
             }
@@ -877,6 +887,7 @@
             playSessionId++;
             isSpeaking = false;
             lastHighlightedWordIdx = -999;
+            lastHighlightedWordSpans = null;
             clearWordHighlights();
 
             audioPlayer.pause();

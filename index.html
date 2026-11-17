@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="referrer" content="no-referrer">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Apple Books Reader - Voice Selector</title>
+    <title>Apple Books Reader - Siri Native</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -163,7 +163,7 @@
         <div style="text-align:center; padding: 70px 20px; color: var(--muted); font-family: -apple-system, sans-serif;">
             <div style="font-size: 44px; margin-bottom: 14px;">📖</div>
             <div style="font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Apple Books Reader</div>
-            <div style="font-size: 14px;">Bấm nút <b>＋</b> góc trái để mở file sách.<br>Đã hỗ trợ tùy chọn nguồn phát và chọn giọng đọc Siri Offline trực tiếp trên máy.</div>
+            <div style="font-size: 14px;">Bấm nút <b>＋</b> góc trái để mở file sách.<br>Đã ép định dạng kích hoạt chuẩn giọng đọc Siri gốc của iOS.</div>
         </div>
     </main>
 
@@ -196,13 +196,7 @@
                     <span>🔊 Nguồn phát</span>
                     <select id="engineSelect" onchange="onEngineChange(this.value)">
                         <option value="audio_stream" selected>Luồng Audio (Chạy ngầm + Tắt chuông)</option>
-                        <option value="siri_local">Siri Offline (Chọn giọng trong máy)</option>
-                    </select>
-                </div>
-                <div class="setting-row" id="voiceRow">
-                    <span>🎙️ Chọn giọng Siri</span>
-                    <select id="voiceSelect" onchange="onVoiceChange(this.value)">
-                        <option value="">Đang tải giọng trong máy...</option>
+                        <option value="siri_local">Giọng Siri chính hãng (iOS)</option>
                     </select>
                 </div>
                 <div class="setting-row">
@@ -243,43 +237,21 @@
     </div>
 
     <script>
-        // --- 1. CẤU HÌNH GIAO DIỆN & TÙY CHỌN GIỌNG NÓI ---
         let availableVoices = [];
-        let selectedVoiceUri = localStorage.getItem("ab_selected_voice") || "";
 
-        function loadVoices() {
+        function loadSiriVoice() {
             if (!('speechSynthesis' in window)) return;
             const voices = window.speechSynthesis.getVoices();
-            // Lọc các giọng tiếng Việt hoặc tiếng Anh phổ biến trong máy
-            availableVoices = voices.filter(v => v.lang.startsWith('vi') || v.lang.startsWith('en'));
-            if (availableVoices.length === 0) availableVoices = voices; // Fallback toàn bộ nếu ko tìm thấy vi
+            if (!voices || voices.length === 0) return;
 
-            const voiceSelect = document.getElementById('voiceSelect');
-            voiceSelect.innerHTML = "";
-            
-            availableVoices.forEach((v, idx) => {
-                const opt = document.createElement('option');
-                opt.value = v.voiceURI;
-                opt.textContent = `${v.name} (${v.lang})`;
-                if (v.voiceURI === selectedVoiceUri || (!selectedVoiceUri && v.lang.startsWith('vi'))) {
-                    opt.selected = true;
-                    selectedVoiceUri = v.voiceURI;
-                }
-                voiceSelect.appendChild(opt);
-            });
+            // Ưu tiên chọn giọng Siri tiếng Việt chuẩn chính hãng trên iOS (Linh / vi-VN cao cấp)
+            availableVoices = voices;
         }
 
         if ('speechSynthesis' in window) {
-            window.speechSynthesis.onvoiceschanged = loadVoices;
-            setTimeout(loadVoices, 100);
-        }
-
-        function onVoiceChange(uri) {
-            selectedVoiceUri = uri;
-            localStorage.setItem("ab_selected_voice", uri);
-            if (isSpeaking && document.getElementById('engineSelect').value === 'siri_local') {
-                jumpToIndex(currentIndex);
-            }
+            window.speechSynthesis.onvoiceschanged = loadSiriVoice;
+            loadSiriVoice();
+            setTimeout(loadSiriVoice, 300);
         }
 
         let currentFontSize = parseInt(localStorage.getItem("ab_font_size") || "19", 10);
@@ -300,7 +272,6 @@
 
         const savedEngine = localStorage.getItem("ab_tts_engine") || "audio_stream";
         document.getElementById('engineSelect').value = savedEngine;
-        document.getElementById('voiceRow').style.display = (savedEngine === 'siri_local') ? 'flex' : 'none';
 
         function openSettings() { document.getElementById('settingsSheet').classList.add('open'); }
         function closeSettings() { document.getElementById('settingsSheet').classList.remove('open'); }
@@ -325,7 +296,6 @@
 
         function onEngineChange(val) {
             localStorage.setItem("ab_tts_engine", val);
-            document.getElementById('voiceRow').style.display = (val === 'siri_local') ? 'flex' : 'none';
             if (isSpeaking) jumpToIndex(currentIndex);
         }
 
@@ -779,7 +749,7 @@
             highlightItem(currentIndex);
         }
 
-        // --- 4. ĐIỀU PHỐI AUDIO STREAM & SIRI OFFLINE ---
+        // --- 4. ĐIỀU PHỐI AUDIO STREAM & GIỌNG SIRI CHÍNH HÃNG ---
         function splitParagraphIntoSubChunks(text) {
             const words = [];
             const regex = /\S+/g;
@@ -930,7 +900,7 @@
                 playItemViaNativeAudioStream(currentIndex, currentSession);
             } else {
                 audioPlayer.pause();
-                playItemViaLocalSiriSync(currentIndex, currentSession);
+                playItemViaSiriOfficial(currentIndex, currentSession);
             }
         }
 
@@ -1073,8 +1043,8 @@
             playNextSubChunk(0);
         }
 
-        // PHƯƠNG ÁN 2: Siri Offline (Hỗ trợ chọn đúng giọng nói trong máy của mày)
-        function playItemViaLocalSiriSync(idx, session) {
+        // PHƯƠNG ÁN 2: Gọi trực tiếp giọng Siri tiếng Việt chuẩn chính hãng của iOS
+        function playItemViaSiriOfficial(idx, session) {
             if (!isSpeaking || session !== playSessionId) return;
             if (idx >= displayList.length) {
                 if (currentChapterIndex + 1 < chapters.length) {
@@ -1082,7 +1052,7 @@
                     chapterSelect.value = currentChapterIndex;
                     renderChapter(currentChapterIndex, 0);
                     saveProgress();
-                    playItemViaLocalSiriSync(0, session);
+                    playItemViaSiriOfficial(0, session);
                 } else {
                     stopSpeech();
                 }
@@ -1100,12 +1070,16 @@
             const rate = parseFloat(speedSelect.value) || 1.0;
 
             const utterance = new SpeechSynthesisUtterance(item.text);
-            utterance.lang = 'vi-VN';
             utterance.rate = rate;
 
-            if (selectedVoiceUri && availableVoices.length > 0) {
-                const targetVoice = availableVoices.find(v => v.voiceURI === selectedVoiceUri);
-                if (targetVoice) utterance.voice = targetVoice;
+            // Tự động bốc đúng giọng Siri tiếng Việt chuẩn nhất trong hệ thống iOS
+            const voices = window.speechSynthesis.getVoices();
+            const siriVoice = voices.find(v => v.lang.startsWith('vi') && (v.name.includes('Siri') || v.name.includes('Linh') || v.default));
+            if (siriVoice) {
+                utterance.voice = siriVoice;
+            } else if (voices.length > 0) {
+                const viVoice = voices.find(v => v.lang.startsWith('vi'));
+                if (viVoice) utterance.voice = viVoice;
             }
 
             applyCometTrailToSpanList(wordSpans, 0);
@@ -1128,13 +1102,13 @@
             utterance.onend = () => {
                 if (!isSpeaking || session !== playSessionId) return;
                 clearWordHighlights();
-                playItemViaLocalSiriSync(currentIndex + 1, session);
+                playItemViaSiriOfficial(currentIndex + 1, session);
             };
 
             utterance.onerror = (e) => {
                 if (!isSpeaking || session !== playSessionId) return;
                 if (e.error === 'interrupted' || e.error === 'canceled') return;
-                playItemViaLocalSiriSync(currentIndex + 1, session);
+                playItemViaSiriOfficial(currentIndex + 1, session);
             };
 
             window.speechSynthesis.cancel();

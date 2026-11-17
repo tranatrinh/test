@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Apple Books Reader - Background & Comet Trail</title>
+    <title>Apple Books Reader - Media Session & Comet Trail</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -155,7 +155,7 @@
         <div style="text-align:center; padding: 70px 20px; color: var(--muted); font-family: -apple-system, sans-serif;">
             <div style="font-size: 44px; margin-bottom: 14px;">📖</div>
             <div style="font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc sách Apple Books</div>
-            <div style="font-size: 14px;">Bấm nút <b>＋</b> góc trái để mở file sách.<br>Đã tối ưu chạy ngầm hoàn hảo khi out ứng dụng và khóa màn hình.</div>
+            <div style="font-size: 14px;">Bấm nút <b>＋</b> góc trái để mở file sách.<br>Tích hợp cơ chế Media Session chuẩn báo chí: Thoát ứng dụng hay gạt tắt chuông vẫn phát tiếng và chạy sao băng mượt mà.</div>
         </div>
     </main>
 
@@ -316,7 +316,7 @@
                 const tx = db.transaction(STORE_NAME, "readwrite");
                 tx.objectStore(STORE_NAME).delete(id);
                 tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(req.error);
+                tx.onerror = () => reject(tx.error);
             });
         }
 
@@ -389,7 +389,7 @@
         let wordTicker = null;
         let jumpTimer = null;
 
-        // --- CƠ CHẾ CHẠY NGẦM & VƯỢT NÚT GẠT TẮT CHUÔNG TRÊN iOS ---
+        // --- CƠ CHẾ NATIVE AUDIO CARRIER (CHẠY NGẦM & VƯỢT NÚT GẠT TẮT CHUÔNG) ---
         function createPlaybackChannelWavUrl() {
             const sampleRate = 8000;
             const numSamples = sampleRate * 3;
@@ -401,7 +401,7 @@
             view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
             view.setUint16(32, 2, true); view.setUint16(34, 16, true); writeStr(36, 'data'); view.setUint32(40, numSamples * 2, true);
             for (let i = 0; i < numSamples; i++) {
-                const sample = Math.round(Math.sin(2 * Math.PI * 20 * (i / sampleRate)) * 45);
+                const sample = Math.round(Math.sin(2 * Math.PI * 25 * (i / sampleRate)) * 50);
                 view.setInt16(44 + i * 2, sample, true);
             }
             return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
@@ -419,7 +419,9 @@
             try {
                 if ('audioSession' in navigator) navigator.audioSession.type = 'playback';
             } catch (e) {}
-            if (mediaCarrierAudio.paused) mediaCarrierAudio.play().catch(() => {});
+            if (mediaCarrierAudio.paused) {
+                mediaCarrierAudio.play().catch(() => {});
+            }
             try {
                 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
                 if (AudioContextClass) {
@@ -742,7 +744,7 @@
             highlightItem(currentIndex);
         }
 
-        // --- HỆ THỐNG ĐỌC COMET TRAIL & KHÔNG KẸT 1 CHỮ ---
+        // --- ĐIỀU PHỐI COMET TRAIL & CHẠY NGẦM HOÀN HẢO ---
         function clearWordHighlights() {
             document.querySelectorAll('.w-tok.active-word, .w-tok.trail-1, .w-tok.trail-2').forEach(el => {
                 el.classList.remove('active-word', 'trail-1', 'trail-2');

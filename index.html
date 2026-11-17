@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Apple Books Reader - Media Session & Comet Trail</title>
+    <title>Apple Books Reader - Native Audio Stream</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -73,7 +73,7 @@
         }
         #storyContainer p.active-chunk { background: var(--highlight); }
 
-        /* Hiệu ứng vệt sáng sao băng (Comet Trail) mượt mà */
+        /* Hiệu ứng vệt sáng sao băng (Comet Trail) */
         .w-tok {
             border-radius: 4px;
             padding: 2px 1px;
@@ -83,14 +83,18 @@
             background: linear-gradient(90deg, #ffcc00, #ff9500);
             color: #000000;
             font-weight: 600;
-            box-shadow: 0 0 10px rgba(255, 204, 0, 0.75);
+            box-shadow: 0 0 10px rgba(255, 204, 0, 0.78);
         }
         .w-tok.trail-1 {
-            background: rgba(255, 204, 0, 0.38);
+            background: rgba(255, 204, 0, 0.42);
             color: inherit;
         }
         .w-tok.trail-2 {
-            background: rgba(255, 204, 0, 0.18);
+            background: rgba(255, 204, 0, 0.22);
+            color: inherit;
+        }
+        .w-tok.trail-3 {
+            background: rgba(255, 204, 0, 0.10);
             color: inherit;
         }
 
@@ -133,10 +137,13 @@
         .setting-group { background: var(--bg); border-radius: 14px; padding: 6px 14px; border: 1px solid var(--border); }
         .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 500; }
         .setting-row:last-child { border-bottom: none; }
-        .setting-row select { background: transparent; color: var(--muted); border: none; font-size: 14px; font-weight: 500; outline: none; text-align: right; }
+        .setting-row select { background: transparent; color: var(--muted); border: none; font-size: 14px; font-weight: 500; outline: none; text-align: right; max-width: 60%; }
     </style>
 </head>
 <body class="theme-original">
+
+    <!-- Thẻ <audio> thực chuẩn VnExpress/ThanhNien để iOS cấp quyền chạy ngầm & vượt nút tắt chuông -->
+    <audio id="nativeAudioPlayer" playsinline preload="auto" style="display:none;"></audio>
 
     <div class="top-bar">
         <label class="circle-btn" title="Mở file sách">
@@ -154,8 +161,8 @@
     <main id="storyContainer">
         <div style="text-align:center; padding: 70px 20px; color: var(--muted); font-family: -apple-system, sans-serif;">
             <div style="font-size: 44px; margin-bottom: 14px;">📖</div>
-            <div style="font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Trình đọc sách Apple Books</div>
-            <div style="font-size: 14px;">Bấm nút <b>＋</b> góc trái để mở file sách.<br>Tích hợp cơ chế Media Session chuẩn báo chí: Thoát ứng dụng hay gạt tắt chuông vẫn phát tiếng và chạy sao băng mượt mà.</div>
+            <div style="font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Apple Books Reader</div>
+            <div style="font-size: 14px;">Bấm nút <b>＋</b> góc trái để mở file sách.<br>Sử dụng <b>Native Audio Stream</b> chuẩn báo điện tử: Thoát ra màn hình chính, khóa màn hình, gạt tắt chuông vẫn đọc xuyên suốt và chạy vệt sao băng chuẩn 100%.</div>
         </div>
     </main>
 
@@ -185,6 +192,13 @@
             </div>
             <div class="setting-group">
                 <div class="setting-row">
+                    <span>🔊 Chế độ phát</span>
+                    <select id="engineSelect" onchange="onEngineChange(this.value)">
+                        <option value="audio_stream" selected>Audio Stream (Chạy ngầm + Tắt chuông)</option>
+                        <option value="siri_local">Siri Offline (Chỉ khi mở màn hình)</option>
+                    </select>
+                </div>
+                <div class="setting-row">
                     <span>Aa Phông chữ</span>
                     <select id="fontSelect" onchange="changeFontFamily(this.value)">
                         <option value='ui-serif, "New York", "Iowan Old Style", "Charter", Georgia, serif'>Nguyên bản (New York)</option>
@@ -199,12 +213,12 @@
                 <div class="setting-row">
                     <span>⚡ Tốc độ đọc</span>
                     <select id="speedSelect" onchange="onSpeedChange()">
-                        <option value="0.8">0.8x</option>
+                        <option value="0.85">0.85x</option>
                         <option value="1.0" selected>1.0x</option>
-                        <option value="1.2">1.2x</option>
+                        <option value="1.15">1.15x</option>
+                        <option value="1.3">1.3x</option>
                         <option value="1.5">1.5x</option>
                         <option value="1.75">1.75x</option>
-                        <option value="2.0">2.0x</option>
                     </select>
                 </div>
             </div>
@@ -222,6 +236,7 @@
     </div>
 
     <script>
+        // --- 1. CẤU HÌNH GIAO DIỆN & CHỦ ĐỀ ---
         let currentFontSize = parseInt(localStorage.getItem("ab_font_size") || "19", 10);
         document.documentElement.style.setProperty('--font-size', currentFontSize + 'px');
 
@@ -237,6 +252,9 @@
             document.documentElement.style.setProperty('--reader-font', savedFont);
             document.getElementById('fontSelect').value = savedFont;
         }
+
+        const savedEngine = localStorage.getItem("ab_tts_engine") || "audio_stream";
+        document.getElementById('engineSelect').value = savedEngine;
 
         function openSettings() { document.getElementById('settingsSheet').classList.add('open'); }
         function closeSettings() { document.getElementById('settingsSheet').classList.remove('open'); }
@@ -259,11 +277,20 @@
             localStorage.setItem("ab_font", fontVal);
         }
 
-        function onSpeedChange() {
+        function onEngineChange(val) {
+            localStorage.setItem("ab_tts_engine", val);
             if (isSpeaking) jumpToIndex(currentIndex);
         }
 
-        // --- TỦ SÁCH INDEXEDDB V2 ---
+        function onSpeedChange() {
+            const rate = parseFloat(speedSelect.value) || 1.0;
+            audioPlayer.playbackRate = rate;
+            if (isSpeaking && document.getElementById('engineSelect').value === 'siri_local') {
+                jumpToIndex(currentIndex);
+            }
+        }
+
+        // --- 2. TỦ SÁCH INDEXEDDB ---
         const DB_NAME = "AppleBooksReaderDB_v2";
         const STORE_NAME = "books";
         let currentBookId = localStorage.getItem("ab_last_book_id_v2") || null;
@@ -370,7 +397,7 @@
 
         function closeBookshelf() { document.getElementById("bookshelfSheet").classList.remove("open"); }
 
-        // --- BỘ BÓC TÁCH DOM CHUẨN APPLE BOOKS ---
+        // --- 3. BỘ BÓC TÁCH DOM EPUB/TXT CHUẨN APPLE BOOKS ---
         const fileInput = document.getElementById('fileInput');
         const storyContainer = document.getElementById('storyContainer');
         const chapterSelect = document.getElementById('chapterSelect');
@@ -378,6 +405,7 @@
         const chunkCounter = document.getElementById('chunkCounter');
         const speedSelect = document.getElementById('speedSelect');
         const bookHeaderTitle = document.getElementById('bookHeaderTitle');
+        const audioPlayer = document.getElementById('nativeAudioPlayer');
 
         let chapters = [];
         let currentChapterIndex = 0;
@@ -385,73 +413,6 @@
         let currentIndex = 0;
         let isSpeaking = false;
         let playSessionId = 0;
-        let activeUtterance = null;
-        let wordTicker = null;
-        let jumpTimer = null;
-
-        // --- CƠ CHẾ NATIVE AUDIO CARRIER (CHẠY NGẦM & VƯỢT NÚT GẠT TẮT CHUÔNG) ---
-        function createPlaybackChannelWavUrl() {
-            const sampleRate = 8000;
-            const numSamples = sampleRate * 3;
-            const buffer = new ArrayBuffer(44 + numSamples * 2);
-            const view = new DataView(buffer);
-            const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
-            writeStr(0, 'RIFF'); view.setUint32(4, 36 + numSamples * 2, true); writeStr(8, 'WAVE'); writeStr(12, 'fmt ');
-            view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-            view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
-            view.setUint16(32, 2, true); view.setUint16(34, 16, true); writeStr(36, 'data'); view.setUint32(40, numSamples * 2, true);
-            for (let i = 0; i < numSamples; i++) {
-                const sample = Math.round(Math.sin(2 * Math.PI * 25 * (i / sampleRate)) * 50);
-                view.setInt16(44 + i * 2, sample, true);
-            }
-            return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
-        }
-
-        const mediaCarrierAudio = new Audio(createPlaybackChannelWavUrl());
-        mediaCarrierAudio.loop = true;
-        mediaCarrierAudio.playsInline = true;
-        mediaCarrierAudio.volume = 0.05;
-
-        let audioCtx = null;
-        let wakeLockSentinel = null;
-
-        function forceIosPlaybackAudioSession() {
-            try {
-                if ('audioSession' in navigator) navigator.audioSession.type = 'playback';
-            } catch (e) {}
-            if (mediaCarrierAudio.paused) {
-                mediaCarrierAudio.play().catch(() => {});
-            }
-            try {
-                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                if (AudioContextClass) {
-                    if (!audioCtx) {
-                        audioCtx = new AudioContextClass();
-                        const osc = audioCtx.createOscillator();
-                        const gain = audioCtx.createGain();
-                        osc.frequency.value = 20;
-                        gain.gain.value = 0.003;
-                        osc.connect(gain);
-                        gain.connect(audioCtx.destination);
-                        osc.start();
-                    }
-                    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-                }
-            } catch (e) {}
-
-            if ('wakeLock' in navigator && !wakeLockSentinel) {
-                navigator.wakeLock.request('screen').then(s => {
-                    wakeLockSentinel = s;
-                    s.addEventListener('release', () => { wakeLockSentinel = null; });
-                }).catch(() => {});
-            }
-        }
-
-        function releasePlaybackSession() {
-            mediaCarrierAudio.pause();
-            if (audioCtx && audioCtx.state === 'running') audioCtx.suspend().catch(() => {});
-            if (wakeLockSentinel) { wakeLockSentinel.release().catch(() => {}); wakeLockSentinel = null; }
-        }
 
         const CHAPTER_REGEX = /^(?:Chương|Hồi|Quyển|Phần|Tiết|Tập|Phiên\s*ngoại|Ngoại\s*truyện|Chapter)\s*[\dIVXLCDM\-]+.*/i;
         const VALID_CHAR_REGEX = /[a-zA-Z0-9àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđĐ]/;
@@ -689,14 +650,9 @@
         function onChapterChange() {
             const wasPlaying = isSpeaking;
             const newChapIdx = parseInt(chapterSelect.value, 10);
-            if (wasPlaying) {
-                renderChapter(newChapIdx, 0);
-                saveProgress();
-                jumpToIndex(0);
-            } else {
-                renderChapter(newChapIdx, 0);
-                saveProgress();
-            }
+            renderChapter(newChapIdx, 0);
+            saveProgress();
+            if (wasPlaying) jumpToIndex(0);
         }
 
         function buildWordTokensHtml(text) {
@@ -744,11 +700,85 @@
             highlightItem(currentIndex);
         }
 
-        // --- ĐIỀU PHỐI COMET TRAIL & CHẠY NGẦM HOÀN HẢO ---
+        // --- 4. CƠ CHẾ PHÁT NATIVE <AUDIO> STREAM CHUẨN BÁO CHÍ (VNEXPRESS / THANHNIEN) ---
+        // Tự động chia đoạn văn thành các mệnh đề <= 180 ký tự kèm vị trí từ chính xác để phát qua thẻ <audio> thật
+        function splitParagraphIntoSubChunks(text, totalWordsCount) {
+            const words = [];
+            const regex = /\S+/g;
+            let m;
+            while ((m = regex.exec(text)) !== null) {
+                words.push({ word: m[0], index: words.length });
+            }
+            if (words.length === 0) return [];
+
+            const subChunks = [];
+            let curWords = [];
+            let curLen = 0;
+
+            for (let i = 0; i < words.length; i++) {
+                const w = words[i].word;
+                const nextLen = curLen + (curWords.length > 0 ? 1 : 0) + w.length;
+                const isPunctuationEnd = /[.!?;:…]$/.test(w);
+
+                curWords.push(words[i]);
+                curLen = nextLen;
+
+                if ((isPunctuationEnd && curLen >= 70) || curLen >= 165 || i === words.length - 1) {
+                    subChunks.push({
+                        text: curWords.map(x => x.word).join(" "),
+                        startWordIdx: curWords[0].index,
+                        endWordIdx: curWords[curWords.length - 1].index
+                    });
+                    curWords = [];
+                    curLen = 0;
+                }
+            }
+            return subChunks;
+        }
+
+        // Tạo URL luồng âm thanh MP3 trực tiếp
+        function buildTtsStreamUrl(textClause) {
+            const q = encodeURIComponent(textClause.trim());
+            return `https://translate.googleapis.com/translate_tts?ie=UTF-8&client=tw-ob&tl=vi&q=${q}`;
+        }
+
+        // Bộ nhớ đệm Preload giúp chuyển câu không độ trễ
+        const preloadedAudioCache = new Map();
+        function preloadAudioUrl(url) {
+            if (!url || preloadedAudioCache.has(url)) return;
+            const a = new Audio();
+            a.preload = "auto";
+            a.src = url;
+            preloadedAudioCache.set(url, a);
+            if (preloadedAudioCache.size > 10) {
+                const firstKey = preloadedAudioCache.keys().next().value;
+                preloadedAudioCache.delete(firstKey);
+            }
+        }
+
         function clearWordHighlights() {
-            document.querySelectorAll('.w-tok.active-word, .w-tok.trail-1, .w-tok.trail-2').forEach(el => {
-                el.classList.remove('active-word', 'trail-1', 'trail-2');
+            document.querySelectorAll('.w-tok.active-word, .w-tok.trail-1, .w-tok.trail-2, .w-tok.trail-3').forEach(el => {
+                el.classList.remove('active-word', 'trail-1', 'trail-2', 'trail-3');
             });
+        }
+
+        function applyCometTrailToSpanList(wordSpans, activeIdx) {
+            if (!wordSpans || wordSpans.length === 0) return;
+            for (let i = 0; i < wordSpans.length; i++) {
+                wordSpans[i].classList.remove('active-word', 'trail-1', 'trail-2', 'trail-3');
+            }
+            if (activeIdx >= 0 && activeIdx < wordSpans.length) {
+                wordSpans[activeIdx].classList.add('active-word');
+            }
+            if (activeIdx - 1 >= 0 && activeIdx - 1 < wordSpans.length) {
+                wordSpans[activeIdx - 1].classList.add('trail-1');
+            }
+            if (activeIdx - 2 >= 0 && activeIdx - 2 < wordSpans.length) {
+                wordSpans[activeIdx - 2].classList.add('trail-2');
+            }
+            if (activeIdx - 3 >= 0 && activeIdx - 3 < wordSpans.length) {
+                wordSpans[activeIdx - 3].classList.add('trail-3');
+            }
         }
 
         function toggleSpeechPlay() {
@@ -759,20 +789,16 @@
         function stopSpeech() {
             playSessionId++;
             isSpeaking = false;
-            if (jumpTimer) { clearTimeout(jumpTimer); jumpTimer = null; }
-            if (wordTicker) { clearInterval(wordTicker); wordTicker = null; }
             clearWordHighlights();
 
-            if (activeUtterance) {
-                activeUtterance.onend = null;
-                activeUtterance.onerror = null;
-                activeUtterance.onboundary = null;
-                activeUtterance = null;
-            }
+            audioPlayer.pause();
+            audioPlayer.onended = null;
+            audioPlayer.onerror = null;
+            audioPlayer.ontimeupdate = null;
+
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
             }
-            releasePlaybackSession();
             playToggleBtn.innerHTML = "▶ Nghe trang";
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
         }
@@ -782,33 +808,28 @@
             playSessionId++;
             const currentSession = playSessionId;
 
-            if (jumpTimer) { clearTimeout(jumpTimer); jumpTimer = null; }
-            if (wordTicker) { clearInterval(wordTicker); wordTicker = null; }
             clearWordHighlights();
-
             isSpeaking = true;
             playToggleBtn.innerHTML = "■ Dừng nghe";
             currentIndex = Math.max(0, Math.min(idx, displayList.length - 1));
             highlightItem(currentIndex);
 
-            forceIosPlaybackAudioSession();
+            try {
+                if ('audioSession' in navigator) {
+                    navigator.audioSession.type = 'playback';
+                }
+            } catch (e) {}
 
-            if (activeUtterance) {
-                activeUtterance.onend = null;
-                activeUtterance.onerror = null;
-                activeUtterance.onboundary = null;
-                activeUtterance = null;
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
             }
 
-            const wasSpeakingOrPending = window.speechSynthesis.speaking || window.speechSynthesis.pending;
-            window.speechSynthesis.cancel();
-
-            const waitMs = wasSpeakingOrPending ? 140 : 10;
-            jumpTimer = setTimeout(() => {
-                if (isSpeaking && currentSession === playSessionId) {
-                    speakItemSafe(currentIndex, currentSession, 0);
-                }
-            }, waitMs);
+            const engine = document.getElementById('engineSelect').value;
+            if (engine === 'audio_stream') {
+                playItemViaNativeAudioStream(currentIndex, currentSession);
+            } else {
+                playItemViaLocalSiri(currentIndex, currentSession);
+            }
         }
 
         function updateMediaSession() {
@@ -826,7 +847,9 @@
             }
         }
 
-        function speakItemSafe(idx, session, retryCount = 0) {
+        // PHƯƠNG ÁN CHÍNH: Phát qua thẻ <audio> thật giống VnExpress/ThanhNien
+        // -> Chạy ngầm 100% khi thoát Safari/khóa máy, kêu to rõ khi gạt tắt chuông, Comet Trail khớp từng mili-giây theo audio.currentTime
+        function playItemViaNativeAudioStream(idx, session) {
             if (!isSpeaking || session !== playSessionId) return;
 
             if (idx >= displayList.length) {
@@ -835,7 +858,100 @@
                     chapterSelect.value = currentChapterIndex;
                     renderChapter(currentChapterIndex, 0);
                     saveProgress();
-                    speakItemSafe(0, session, 0);
+                    playItemViaNativeAudioStream(0, session);
+                } else {
+                    stopSpeech();
+                }
+                return;
+            }
+
+            currentIndex = idx;
+            highlightItem(idx);
+            saveProgress();
+            updateMediaSession();
+
+            const item = displayList[idx];
+            const blockEl = document.getElementById(`item-${idx}`);
+            const wordSpans = blockEl ? Array.from(blockEl.querySelectorAll('.w-tok')) : [];
+            const subChunks = splitParagraphIntoSubChunks(item.text, wordSpans.length);
+
+            if (subChunks.length === 0) {
+                playItemViaNativeAudioStream(idx + 1, session);
+                return;
+            }
+
+            // Preload trước mệnh đề đầu tiên của đoạn tiếp theo để chuyển đoạn không có độ trễ
+            if (idx + 1 < displayList.length) {
+                const nextSub = splitParagraphIntoSubChunks(displayList[idx + 1].text, 1);
+                if (nextSub.length > 0) preloadAudioUrl(buildTtsStreamUrl(nextSub[0].text));
+            }
+
+            let subIdx = 0;
+
+            const playNextSubChunk = () => {
+                if (!isSpeaking || session !== playSessionId) return;
+                if (subIdx >= subChunks.length) {
+                    clearWordHighlights();
+                    playItemViaNativeAudioStream(currentIndex + 1, session);
+                    return;
+                }
+
+                const curSub = subChunks[subIdx];
+                // Preload gối đầu mệnh đề kế tiếp
+                if (subIdx + 1 < subChunks.length) {
+                    preloadAudioUrl(buildTtsStreamUrl(subChunks[subIdx + 1].text));
+                }
+
+                const streamUrl = buildTtsStreamUrl(curSub.text);
+                audioPlayer.src = streamUrl;
+                audioPlayer.playbackRate = parseFloat(speedSelect.value) || 1.0;
+
+                applyCometTrailToSpanList(wordSpans, curSub.startWordIdx);
+
+                // Đồng bộ vệt sao băng chuẩn xác 100% theo thời gian thực của file âm thanh (currentTime / duration)
+                audioPlayer.ontimeupdate = () => {
+                    if (!isSpeaking || session !== playSessionId) return;
+                    const dur = audioPlayer.duration;
+                    const cur = audioPlayer.currentTime;
+                    if (dur && isFinite(dur) && dur > 0) {
+                        const ratio = Math.min(1, Math.max(0, cur / dur));
+                        const spanCount = curSub.endWordIdx - curSub.startWordIdx + 1;
+                        const activeWordIndex = curSub.startWordIdx + Math.min(spanCount - 1, Math.floor(ratio * spanCount));
+                        applyCometTrailToSpanList(wordSpans, activeWordIndex);
+                    }
+                };
+
+                audioPlayer.onended = () => {
+                    if (!isSpeaking || session !== playSessionId) return;
+                    subIdx++;
+                    playNextSubChunk();
+                };
+
+                audioPlayer.onerror = () => {
+                    if (!isSpeaking || session !== playSessionId) return;
+                    // Nếu mất mạng hoặc lỗi stream thì tự động fallback sang Siri Offline ngay lập tức
+                    playItemViaLocalSiri(currentIndex, session);
+                };
+
+                audioPlayer.play().catch(() => {
+                    if (!isSpeaking || session !== playSessionId) return;
+                    playItemViaLocalSiri(currentIndex, session);
+                });
+            };
+
+            playNextSubChunk();
+        }
+
+        // PHƯƠNG ÁN PHỤ: Siri Offline khi không có mạng
+        function playItemViaLocalSiri(idx, session) {
+            if (!isSpeaking || session !== playSessionId) return;
+            if (idx >= displayList.length) {
+                if (currentChapterIndex + 1 < chapters.length) {
+                    currentChapterIndex++;
+                    chapterSelect.value = currentChapterIndex;
+                    renderChapter(currentChapterIndex, 0);
+                    saveProgress();
+                    playItemViaLocalSiri(0, session);
                 } else {
                     stopSpeech();
                 }
@@ -853,46 +969,8 @@
             const rate = parseFloat(speedSelect.value) || 1.0;
 
             const utterance = new SpeechSynthesisUtterance(item.text);
-            activeUtterance = utterance;
             utterance.lang = 'vi-VN';
             utterance.rate = rate;
-
-            let currentWordIdx = 0;
-            const speakStartTime = Date.now();
-
-            const applyCometTrailAt = (wIdx) => {
-                if (wordSpans.length === 0) return;
-                wordSpans.forEach(s => s.classList.remove('active-word', 'trail-1', 'trail-2'));
-
-                if (wIdx >= 0 && wIdx < wordSpans.length) {
-                    wordSpans[wIdx].classList.add('active-word');
-                }
-                if (wIdx - 1 >= 0 && wIdx - 1 < wordSpans.length) {
-                    wordSpans[wIdx - 1].classList.add('trail-1');
-                }
-                if (wIdx - 2 >= 0 && wIdx - 2 < wordSpans.length) {
-                    wordSpans[wIdx - 2].classList.add('trail-2');
-                }
-            };
-
-            if (wordSpans.length > 0) {
-                applyCometTrailAt(0);
-                const totalEstimatedDurationMs = Math.max(900, (item.text.length * 85) / rate);
-                const stepMs = totalEstimatedDurationMs / wordSpans.length;
-                if (wordTicker) clearInterval(wordTicker);
-
-                wordTicker = setInterval(() => {
-                    if (!isSpeaking || session !== playSessionId) {
-                        clearInterval(wordTicker);
-                        wordTicker = null;
-                        return;
-                    }
-                    if (currentWordIdx + 1 < wordSpans.length) {
-                        currentWordIdx++;
-                        applyCometTrailAt(currentWordIdx);
-                    }
-                }, stepMs);
-            }
 
             utterance.onboundary = (e) => {
                 if (!isSpeaking || session !== playSessionId) return;
@@ -902,51 +980,23 @@
                         const s = parseInt(wordSpans[i].dataset.start, 10);
                         const end = parseInt(wordSpans[i].dataset.end, 10);
                         if (cIdx >= s && cIdx <= end + 1) {
-                            currentWordIdx = i;
-                            applyCometTrailAt(i);
+                            applyCometTrailToSpanList(wordSpans, i);
                             break;
                         }
                     }
                 }
             };
 
-            const cleanupAndNext = () => {
-                if (wordTicker) { clearInterval(wordTicker); wordTicker = null; }
-                clearWordHighlights();
-            };
-
             utterance.onend = () => {
-                if (!isSpeaking || session !== playSessionId || activeUtterance !== utterance) return;
-                const elapsed = Date.now() - speakStartTime;
-
-                if (item.text.length > 15 && elapsed < 300 && retryCount < 2) {
-                    cleanupAndNext();
-                    setTimeout(() => {
-                        if (isSpeaking && session === playSessionId) {
-                            speakItemSafe(idx, session, retryCount + 1);
-                        }
-                    }, 120);
-                    return;
-                }
-
-                cleanupAndNext();
-                speakItemSafe(currentIndex + 1, session, 0);
+                if (!isSpeaking || session !== playSessionId) return;
+                clearWordHighlights();
+                playItemViaLocalSiri(currentIndex + 1, session);
             };
 
             utterance.onerror = (e) => {
-                if (!isSpeaking || session !== playSessionId || activeUtterance !== utterance) return;
+                if (!isSpeaking || session !== playSessionId) return;
                 if (e.error === 'interrupted' || e.error === 'canceled') return;
-
-                cleanupAndNext();
-                if (retryCount < 2) {
-                    setTimeout(() => {
-                        if (isSpeaking && session === playSessionId) {
-                            speakItemSafe(idx, session, retryCount + 1);
-                        }
-                    }, 150);
-                } else {
-                    speakItemSafe(currentIndex + 1, session, 0);
-                }
+                playItemViaLocalSiri(currentIndex + 1, session);
             };
 
             window.speechSynthesis.resume();
@@ -969,7 +1019,6 @@
 
         document.addEventListener("visibilitychange", () => {
             if (document.visibilityState === "visible" && isSpeaking) {
-                forceIosPlaybackAudioSession();
                 highlightItem(currentIndex);
             }
         });

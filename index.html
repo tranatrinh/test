@@ -2,10 +2,9 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <!-- BẮT BUỘC: Ẩn Referer để Google TTS không chặn lỗi 403 khi gọi từ github.io -->
     <meta name="referrer" content="no-referrer">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Apple Books Reader - Pro Audio Stream</title>
+    <title>Apple Books Reader - Voice Selector</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -140,12 +139,11 @@
         .setting-group { background: var(--bg); border-radius: 14px; padding: 6px 14px; border: 1px solid var(--border); }
         .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 500; }
         .setting-row:last-child { border-bottom: none; }
-        .setting-row select { background: transparent; color: var(--muted); border: none; font-size: 14px; font-weight: 500; outline: none; text-align: right; max-width: 62%; }
+        .setting-row select { background: transparent; color: var(--muted); border: none; font-size: 14px; font-weight: 500; outline: none; text-align: right; max-width: 58%; }
     </style>
 </head>
 <body class="theme-original">
 
-    <!-- Thẻ <audio> thực (không gửi Referer) giúp chiếm quyền Control Center iOS, chạy ngầm & vượt nút tắt chuông -->
     <audio id="nativeAudioPlayer" playsinline preload="auto" referrerpolicy="no-referrer" style="display:none;"></audio>
 
     <div class="top-bar">
@@ -165,7 +163,7 @@
         <div style="text-align:center; padding: 70px 20px; color: var(--muted); font-family: -apple-system, sans-serif;">
             <div style="font-size: 44px; margin-bottom: 14px;">📖</div>
             <div style="font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 6px;">Apple Books Reader</div>
-            <div style="font-size: 14px;">Bấm nút <b>＋</b> góc trái để nạp lại file sách.<br>Đã mở khóa luồng MP3 trực tiếp (no-referrer), lọc sạch rác đầu chương và đồng bộ sao băng 60fps.</div>
+            <div style="font-size: 14px;">Bấm nút <b>＋</b> góc trái để mở file sách.<br>Đã hỗ trợ tùy chọn nguồn phát và chọn giọng đọc Siri Offline trực tiếp trên máy.</div>
         </div>
     </main>
 
@@ -198,7 +196,13 @@
                     <span>🔊 Nguồn phát</span>
                     <select id="engineSelect" onchange="onEngineChange(this.value)">
                         <option value="audio_stream" selected>Luồng Audio (Chạy ngầm + Tắt chuông)</option>
-                        <option value="siri_local">Siri Offline (Chỉ khi mở màn hình)</option>
+                        <option value="siri_local">Siri Offline (Chọn giọng trong máy)</option>
+                    </select>
+                </div>
+                <div class="setting-row" id="voiceRow">
+                    <span>🎙️ Chọn giọng Siri</span>
+                    <select id="voiceSelect" onchange="onVoiceChange(this.value)">
+                        <option value="">Đang tải giọng trong máy...</option>
                     </select>
                 </div>
                 <div class="setting-row">
@@ -239,7 +243,45 @@
     </div>
 
     <script>
-        // --- 1. CẤU HÌNH GIAO DIỆN ---
+        // --- 1. CẤU HÌNH GIAO DIỆN & TÙY CHỌN GIỌNG NÓI ---
+        let availableVoices = [];
+        let selectedVoiceUri = localStorage.getItem("ab_selected_voice") || "";
+
+        function loadVoices() {
+            if (!('speechSynthesis' in window)) return;
+            const voices = window.speechSynthesis.getVoices();
+            // Lọc các giọng tiếng Việt hoặc tiếng Anh phổ biến trong máy
+            availableVoices = voices.filter(v => v.lang.startsWith('vi') || v.lang.startsWith('en'));
+            if (availableVoices.length === 0) availableVoices = voices; // Fallback toàn bộ nếu ko tìm thấy vi
+
+            const voiceSelect = document.getElementById('voiceSelect');
+            voiceSelect.innerHTML = "";
+            
+            availableVoices.forEach((v, idx) => {
+                const opt = document.createElement('option');
+                opt.value = v.voiceURI;
+                opt.textContent = `${v.name} (${v.lang})`;
+                if (v.voiceURI === selectedVoiceUri || (!selectedVoiceUri && v.lang.startsWith('vi'))) {
+                    opt.selected = true;
+                    selectedVoiceUri = v.voiceURI;
+                }
+                voiceSelect.appendChild(opt);
+            });
+        }
+
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.onvoiceschanged = loadVoices;
+            setTimeout(loadVoices, 100);
+        }
+
+        function onVoiceChange(uri) {
+            selectedVoiceUri = uri;
+            localStorage.setItem("ab_selected_voice", uri);
+            if (isSpeaking && document.getElementById('engineSelect').value === 'siri_local') {
+                jumpToIndex(currentIndex);
+            }
+        }
+
         let currentFontSize = parseInt(localStorage.getItem("ab_font_size") || "19", 10);
         document.documentElement.style.setProperty('--font-size', currentFontSize + 'px');
 
@@ -258,6 +300,7 @@
 
         const savedEngine = localStorage.getItem("ab_tts_engine") || "audio_stream";
         document.getElementById('engineSelect').value = savedEngine;
+        document.getElementById('voiceRow').style.display = (savedEngine === 'siri_local') ? 'flex' : 'none';
 
         function openSettings() { document.getElementById('settingsSheet').classList.add('open'); }
         function closeSettings() { document.getElementById('settingsSheet').classList.remove('open'); }
@@ -282,6 +325,7 @@
 
         function onEngineChange(val) {
             localStorage.setItem("ab_tts_engine", val);
+            document.getElementById('voiceRow').style.display = (val === 'siri_local') ? 'flex' : 'none';
             if (isSpeaking) jumpToIndex(currentIndex);
         }
 
@@ -293,7 +337,7 @@
             }
         }
 
-        // --- 2. TỦ SÁCH INDEXEDDB V3 (ĐỔI V3 ĐỂ XÓA SẠCH CACHE CŨ DÍNH RÁC DTV-EBOOK) ---
+        // --- 2. TỦ SÁCH INDEXEDDB V3 ---
         const DB_NAME = "AppleBooksReaderDB_v3";
         const STORE_NAME = "books";
         let currentBookId = localStorage.getItem("ab_last_book_id_v3") || null;
@@ -400,7 +444,7 @@
 
         function closeBookshelf() { document.getElementById("bookshelfSheet").classList.remove("open"); }
 
-        // --- 3. BỘ BÓC TÁCH DOM & LỌC SẠCH RÁC ĐẦU CHƯƠNG (DTV-EBOOK, TÊN TRUYỆN, TÁC GIẢ) ---
+        // --- 3. BỘ BÓC TÁCH DOM & LỌC SẠCH RÁC ĐẦU CHƯƠNG ---
         const fileInput = document.getElementById('fileInput');
         const storyContainer = document.getElementById('storyContainer');
         const chapterSelect = document.getElementById('chapterSelect');
@@ -458,7 +502,6 @@
                 paragraphs.push(trimmed);
             }
 
-            // Nếu trong 6 dòng đầu có kiểu tách 2 dòng: Dòng i là "Chương 3", dòng i+1 là "Kim Tích" -> Gộp làm tiêu đề chuẩn
             let combinedChapHeading = "";
             for (let i = 0; i < Math.min(6, paragraphs.length); i++) {
                 if (ONLY_CHAP_NUM_REGEX.test(paragraphs[i])) {
@@ -487,37 +530,26 @@
             }
 
             const normTitle = normalizeCompare(finalTitle);
-            const normBookParts = (bookNameClean || "")
-                .split(/[-–_•|]/)
-                .map(s => normalizeCompare(s))
-                .filter(s => s.length >= 3);
+            const normBookParts = (bookNameClean || "").split(/[-–_•|]/).map(s => normalizeCompare(s)).filter(s => s.length >= 3);
 
-            // Quét tối đa 7 dòng đầu tiên để lọc sạch rác đầu chương (tên web dtv-ebook, tên truyện, tác giả, tiêu đề lặp)
             let scanCount = 0;
             while (paragraphs.length > 0 && scanCount < 7) {
                 scanCount++;
                 const firstLine = paragraphs[0];
                 const normFirst = normalizeCompare(firstLine);
 
-                // 1. Dòng chứa link web (www.dtv-ebook.com, .com, .vn...)
                 if (WEB_JUNK_REGEX.test(firstLine) && firstLine.length < 85) {
                     paragraphs.shift();
                     continue;
                 }
-
-                // 2. Dòng ngắn ở đầu trùng tên truyện hoặc tên tác giả (VD: "Già Thiên", "Thần Đông")
                 if (firstLine.length < 45 && normBookParts.some(part => normFirst === part || (part.includes(normFirst) && normFirst.length >= 4))) {
                     paragraphs.shift();
                     continue;
                 }
-
-                // 3. Dòng trùng toàn bộ hoặc là một nửa của tiêu đề chương (VD: "Chương 3" rồi dòng sau là "Kim Tích")
                 if (normFirst === normTitle || ONLY_CHAP_NUM_REGEX.test(firstLine) || (firstLine.length < 55 && normTitle.includes(normFirst) && normFirst.length >= 3)) {
                     paragraphs.shift();
                     continue;
                 }
-
-                // 4. Dòng đầu bị dính tiêu đề vào câu văn đầu tiên -> Cắt gọt phần tiêu đề
                 if (finalTitle.length > 3 && firstLine.toLowerCase().startsWith(finalTitle.toLowerCase())) {
                     const remainder = firstLine.substring(finalTitle.length).replace(/^[\s.:,\-–—]+/, '').trim();
                     if (remainder.length > 0) {
@@ -747,11 +779,7 @@
             highlightItem(currentIndex);
         }
 
-        // --- 4. HỆ THỐNG NATIVE AUDIO STREAM (NO-REFERRER + CHIẾM CONTROL CENTER TỨC THÌ) ---
-        // Tạo xung âm thanh 0.05s dùng để mở khóa tức thì thẻ <audio> ngay trong sự kiện chạm ngón tay (User Gesture)
-        const UNLOCK_WAV_URI = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
-
-        // Chia đoạn văn thành các cụm câu kèm trọng số độ dài ký tự của từng từ để tính Comet Trail chính xác tuyệt đối
+        // --- 4. ĐIỀU PHỐI AUDIO STREAM & SIRI OFFLINE ---
         function splitParagraphIntoSubChunks(text) {
             const words = [];
             const regex = /\S+/g;
@@ -796,7 +824,6 @@
             return subChunks;
         }
 
-        // Đa cổng Google TTS (với <meta name="referrer" content="no-referrer">, cổng 0 sẽ thông 100%)
         function getStreamUrlsForText(textClause) {
             const q = encodeURIComponent(textClause.trim());
             return [
@@ -891,7 +918,6 @@
             currentIndex = Math.max(0, Math.min(idx, displayList.length - 1));
             highlightItem(currentIndex);
 
-            // Đặt kênh âm thanh của iOS sang Playback (Bỏ qua nút gạt tắt chuông & chạy ngầm)
             try {
                 if ('audioSession' in navigator) {
                     navigator.audioSession.type = 'playback';
@@ -923,7 +949,6 @@
             }
         }
 
-        // PHƯƠNG ÁN 1 (MẶC ĐỊNH): Phát qua thẻ <audio> thật chuẩn báo VnExpress/ThanhNien
         function playItemViaNativeAudioStream(idx, session) {
             if (!isSpeaking || session !== playSessionId) return;
 
@@ -955,7 +980,6 @@
                 return;
             }
 
-            // Preload trước đoạn tiếp theo
             if (idx + 1 < displayList.length) {
                 const nextSub = splitParagraphIntoSubChunks(displayList[idx + 1].text);
                 if (nextSub.length > 0) preloadAudioUrl(getStreamUrlsForText(nextSub[0].text)[0]);
@@ -986,13 +1010,11 @@
                 lastHighlightedWordIdx = -999;
                 applyCometTrailToSpanList(wordSpans, curSub.startWordIdx);
 
-                // Vòng lặp 60fps nội suy vị trí chữ theo trọng số độ dài từ & thời gian thực của file MP3
                 const syncCometFrame = () => {
                     if (!isSpeaking || session !== playSessionId) return;
                     const dur = audioPlayer.duration;
                     const cur = audioPlayer.currentTime;
                     if (dur && isFinite(dur) && dur > 0.05) {
-                        // Bù 0.04s khoảng lặng đầu file MP3 để vệt sáng khớp miệng đọc
                         const effectiveRatio = Math.min(0.999, Math.max(0, (cur - 0.03) / Math.max(0.1, dur - 0.08)));
                         let matchedGlobalIdx = curSub.startWordIdx;
                         for (let k = 0; k < curSub.wordThresholds.length; k++) {
@@ -1051,7 +1073,7 @@
             playNextSubChunk(0);
         }
 
-        // PHƯƠNG ÁN 2: Siri Offline (gọi đồng bộ trực tiếp trong User Gesture để không bị Safari khóa)
+        // PHƯƠNG ÁN 2: Siri Offline (Hỗ trợ chọn đúng giọng nói trong máy của mày)
         function playItemViaLocalSiriSync(idx, session) {
             if (!isSpeaking || session !== playSessionId) return;
             if (idx >= displayList.length) {
@@ -1080,6 +1102,11 @@
             const utterance = new SpeechSynthesisUtterance(item.text);
             utterance.lang = 'vi-VN';
             utterance.rate = rate;
+
+            if (selectedVoiceUri && availableVoices.length > 0) {
+                const targetVoice = availableVoices.find(v => v.voiceURI === selectedVoiceUri);
+                if (targetVoice) utterance.voice = targetVoice;
+            }
 
             applyCometTrailToSpanList(wordSpans, 0);
 

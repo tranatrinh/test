@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Đọc Truyện AI - Phát Trực Tiếp</title>
+  <title>Đọc Truyện AI - Chạy Trực Tiếp (Không Server)</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
     :root {
@@ -50,7 +50,7 @@
       padding: 14px;
       margin-bottom: 14px;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: 10px;
     }
     label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
@@ -138,12 +138,16 @@
 <body>
   <header>
     <div class="brand">📖 Đọc Truyện Trực Tiếp (EPUB / TXT)</div>
-    <div class="status-bar" id="statusBar">Chọn file EPUB hoặc TXT để nghe ngay</div>
+    <div class="status-bar" id="statusBar">Dán API Key và chọn sách để nghe ngay</div>
   </header>
 
   <div class="container">
-    <!-- THANH CÔNG CỤ CHỌN FILE & GIỌNG ĐỌC -->
+    <!-- THANH CÔNG CỤ -->
     <div class="toolbar">
+      <div>
+        <label>🔑 Gemini API Key (AI Studio):</label>
+        <input type="password" id="apiKeyInput" placeholder="Dán API Key vào đây..." />
+      </div>
       <div>
         <label>📂 Mở file sách (.epub / .txt):</label>
         <input type="file" id="fileInput" accept=".epub,.txt,application/epub+zip,text/plain" />
@@ -177,7 +181,7 @@
       <button class="secondary" onclick="changeChapter(1)">▶</button>
     </div>
 
-    <!-- NỘI DUNG TRUYỆN (BẤM VÀO ĐOẠN NÀO ĐỌC NGAY ĐOẠN ĐÓ) -->
+    <!-- NỘI DUNG TRUYỆN -->
     <div class="chunk-list" id="chunkList"></div>
   </div>
 
@@ -195,11 +199,10 @@
   </div>
 
   <script>
-    const WORKER_URL = "https://gemini38flash-litetts.tranatrinh.workers.dev";
     const DB_NAME = "LocalStoryReaderDB";
     const STORE_NAME = "books";
 
-    let currentBook = null; // { id, title, chapters: [{ title, content }], lastChapter, lastChunk }
+    let currentBook = null;
     let currentChapterIdx = 0;
     let chunks = [];
     let currentChunkIdx = 0;
@@ -211,12 +214,17 @@
     const statusBar = document.getElementById("statusBar");
     const playerInfo = document.getElementById("playerInfo");
     const audioPlayer = document.getElementById("audioPlayer");
+    const apiKeyInput = document.getElementById("apiKeyInput");
     const voiceSelect = document.getElementById("voiceSelect");
     const speedSelect = document.getElementById("speedSelect");
 
+    apiKeyInput.value = localStorage.getItem("sr_direct_gemini_key") || "";
     voiceSelect.value = localStorage.getItem("sr_voice") || "Aoede";
     speedSelect.value = localStorage.getItem("sr_speed") || "1.15";
 
+    apiKeyInput.addEventListener("input", () => {
+      localStorage.setItem("sr_direct_gemini_key", apiKeyInput.value.trim());
+    });
     voiceSelect.addEventListener("change", () => {
       localStorage.setItem("sr_voice", voiceSelect.value);
       clearAudioCache();
@@ -227,7 +235,7 @@
     });
 
     // =================================================================
-    // LƯU TRỰC TIẾP VÀO BỘ NHỚ MÁY (INDEXEDDB) - KHÔNG QUA CLOUD
+    // LƯU SÁCH & TIẾN ĐỘ TRỰC TIẾP TRÊN BỘ NHỚ MÁY (INDEXEDDB)
     // =================================================================
     function openLocalDB() {
       return new Promise((resolve, reject) => {
@@ -405,7 +413,7 @@
     });
 
     // =================================================================
-    // CHIA ĐOẠN & PHÁT ÂM THANH TRỰC TIẾP QUA GEMINI WORKER
+    // CHIA ĐOẠN & GỌI TRỰC TIẾP GEMINI API (KHÔNG QUA SERVER TRUNG GIAN)
     // =================================================================
     function splitChapterToChunks(rawText, maxLen = 550) {
       const result = [];
@@ -500,32 +508,68 @@
       if (activeEl) activeEl.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
-    async function fetchAudio(text) {
-      const resp = await fetch(`${WORKER_URL}/tts`, {
+    async function fetchAudioDirectFromGemini(text) {
+      const apiKey = apiKeyInput.value.trim();
+      if (!apiKey) throw new Error("Vui lòng dán Gemini API Key vào ô trên cùng!");
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-lite-tts:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const resp = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          text,
-          voice: voiceSelect.value,
-          model: "gemini-3.8-flash-lite-tts",
-          style: "Giọng kể chuyện truyền cảm, tự nhiên, ngắt nghỉ đúng nhịp"
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text,
+                  speech_metadata: {
+                    style: "Giọng kể chuyện truyền cảm, tự nhiên, ngắt nghỉ đúng nhịp"
+                  }
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: voiceSelect.value }
+              }
+            }
+          }
         })
       });
+
+      const data = await resp.json();
       if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(err.error || `HTTP ${resp.status}`);
+        throw new Error(data.error?.message || `HTTP ${resp.status}`);
       }
-      return URL.createObjectURL(await resp.blob());
+
+      const audioPart = data.candidates?.[0]?.content?.parts?.find((p) => p.inlineData);
+      if (!audioPart?.inlineData?.data) {
+        throw new Error("Gemini không trả về dữ liệu âm thanh");
+      }
+
+      const byteChars = atob(audioPart.inlineData.data);
+      const byteArray = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) {
+        byteArray[i] = byteChars.charCodeAt(i);
+      }
+      const blob = new Blob([byteArray], { type: audioPart.inlineData.mimeType || "audio/wav" });
+      return URL.createObjectURL(blob);
     }
 
     async function preloadChunk(chunkIdx) {
       if (chunkIdx < 0 || chunkIdx >= chunks.length) return null;
+      if (!apiKeyInput.value.trim()) return null;
+
       const chapSnap = currentChapterIdx;
       const key = getCacheKey(chapSnap, chunkIdx);
       if (audioCache.has(key)) return audioCache.get(key);
       if (pendingFetches.has(key)) return pendingFetches.get(key);
 
-      const promise = fetchAudio(chunks[chunkIdx])
+      const promise = fetchAudioDirectFromGemini(chunks[chunkIdx])
         .then((url) => {
           audioCache.set(key, url);
           pendingFetches.delete(key);
@@ -558,7 +602,6 @@
       document.getElementById("playPauseBtn").textContent = "⏸ Tạm dừng";
       updateHighlight();
 
-      // Lưu tiến độ trực tiếp vào bộ nhớ trình duyệt trên máy
       if (currentBook) {
         currentBook.lastChapter = currentChapterIdx;
         currentBook.lastChunk = currentChunkIdx;
@@ -622,7 +665,6 @@
       playFromIndex(currentChunkIdx + 1);
     }
 
-    // Tự động mở lại cuốn sách đang đọc dở trên máy khi vào lại trang
     (async function init() {
       const saved = await loadBookFromDevice("active_book");
       if (saved?.chapters?.length) {

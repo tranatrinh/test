@@ -2,229 +2,491 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Đọc Truyện AI - Chạy Trực Tiếp (Không Server)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Sách Nói — Apple Books Style</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
     :root {
-      --bg: #0b1120;
-      --surface: #1e293b;
-      --surface-hover: #273549;
-      --border: #334155;
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --primary: #3b82f6;
-      --active-bg: rgba(59, 130, 246, 0.24);
-      --cached: #10b981;
+      --bg: #fbf8f3;
+      --surface: rgba(251, 248, 243, 0.88);
+      --sheet: #f3eee4;
+      --border: rgba(60, 45, 25, 0.12);
+      --text: #1c1917;
+      --muted: #78716c;
+      --accent: #b45309;
+      --highlight: rgba(217, 119, 6, 0.14);
+      --font-size: 19px;
+      --font-family: "Charter", "Iowan Old Style", "Georgia", "Times New Roman", serif;
     }
-    * { box-sizing: border-box; }
+    [data-theme="light"] {
+      --bg: #ffffff;
+      --surface: rgba(255, 255, 255, 0.9);
+      --sheet: #f5f5f7;
+      --border: rgba(0, 0, 0, 0.1);
+      --text: #1d1d1f;
+      --muted: #86868b;
+      --accent: #007aff;
+      --highlight: rgba(0, 122, 255, 0.12);
+    }
+    [data-theme="gray"] {
+      --bg: #3a3a3c;
+      --surface: rgba(58, 58, 60, 0.9);
+      --sheet: #2c2c2e;
+      --border: rgba(255, 255, 255, 0.12);
+      --text: #e5e5ea;
+      --muted: #aeaeb2;
+      --accent: #64d2ff;
+      --highlight: rgba(100, 210, 255, 0.16);
+    }
+    [data-theme="dark"] {
+      --bg: #000000;
+      --surface: rgba(18, 18, 20, 0.88);
+      --sheet: #1c1c1e;
+      --border: rgba(255, 255, 255, 0.14);
+      --text: #f2f2f7;
+      --muted: #8e8e93;
+      --accent: #ff9f0a;
+      --highlight: rgba(255, 159, 10, 0.16);
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     body {
       margin: 0;
-      font-family: system-ui, -apple-system, sans-serif;
       background: var(--bg);
       color: var(--text);
-      padding-bottom: 115px;
-      line-height: 1.65;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+      transition: background 0.25s ease, color 0.25s ease;
+      padding-bottom: 130px;
     }
-    header {
-      background: rgba(15, 23, 42, 0.94);
-      backdrop-filter: blur(10px);
-      border-bottom: 1px solid var(--border);
-      padding: 12px 16px;
+
+    /* THANH TIÊU ĐỀ TỐI GIẢN KIỂU APPLE BOOKS */
+    .top-bar {
       position: sticky;
       top: 0;
       z-index: 30;
+      background: var(--surface);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
-    }
-    .brand { font-weight: 700; font-size: 16px; }
-    .status-bar { font-size: 13px; color: #38bdf8; }
-    .container { max-width: 860px; margin: 16px auto; padding: 0 14px; }
-    .toolbar {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 14px;
-      margin-bottom: 14px;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: 10px;
     }
-    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-    input, select {
-      width: 100%;
-      background: var(--bg);
+    .icon-btn {
+      background: transparent;
+      border: none;
+      color: var(--accent);
+      font-size: 16px;
+      font-weight: 600;
+      padding: 6px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .icon-btn:active { opacity: 0.6; }
+    .book-header-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 55%;
+      text-align: center;
+    }
+
+    /* TRANG SÁCH LIỀN MẠCH CHUẨN SÁCH IN */
+    .book-page {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 28px 22px 40px;
+    }
+    .chapter-heading {
+      font-family: var(--font-family);
+      font-size: calc(var(--font-size) + 6px);
+      font-weight: 700;
+      line-height: 1.35;
+      margin: 8px 0 26px;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .story-block {
+      font-family: var(--font-family);
+      font-size: var(--font-size);
+      line-height: 1.82;
+      margin-bottom: 16px;
+      padding: 6px 10px;
+      margin-left: -10px;
+      margin-right: -10px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    .story-block p {
+      margin: 0 0 0.85em;
+      text-indent: 1.5em;
+      text-align: justify;
+    }
+    .story-block p:last-child { margin-bottom: 0; }
+    .story-block.active {
+      background: var(--highlight);
+    }
+
+    .chapter-footer-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 36px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+    .nav-pill {
+      background: var(--sheet);
       color: var(--text);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-size: 14px;
-    }
-    button {
-      background: var(--primary);
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 9px 14px;
+      padding: 10px 18px;
+      border-radius: 999px;
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
     }
-    button.secondary { background: #334155; }
-    button:disabled { opacity: 0.45; cursor: not-allowed; }
-    .chapter-nav {
+
+    /* MINI PLAYER NỔI KIỂU APPLE BOOKS AUDIOBOOK */
+    .mini-player {
+      position: fixed;
+      bottom: calc(12px + env(safe-area-inset-bottom));
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 24px);
+      max-width: 640px;
+      background: var(--surface);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 10px 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+      z-index: 40;
+    }
+    .player-top-row {
       display: flex;
       align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .player-meta {
+      flex: 1;
+      min-width: 0;
+    }
+    .player-status {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .player-sub {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .player-btns {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .play-circle {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .skip-btn {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: 18px;
+      padding: 6px 8px;
+      cursor: pointer;
+    }
+    .progress-bar-wrap {
+      width: 100%;
+      height: 3px;
+      background: var(--border);
+      border-radius: 99px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width 0.25s linear;
+    }
+
+    /* BẢNG ĐIỀU KHIỂN TRƯỢT TỪ DƯỚI LÊN (APPLE SHEET) */
+    .sheet-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 50;
+      display: none;
+    }
+    .sheet-backdrop.open { display: block; }
+    .bottom-sheet {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      max-height: 82vh;
+      background: var(--sheet);
+      color: var(--text);
+      border-top-left-radius: 22px;
+      border-top-right-radius: 22px;
+      padding: 18px 20px calc(24px + env(safe-area-inset-bottom));
+      z-index: 60;
+      overflow-y: auto;
+      transform: translateY(100%);
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+      max-width: 680px;
+      margin: 0 auto;
+    }
+    .bottom-sheet.open { transform: translateY(0); }
+    .sheet-handle {
+      width: 36px;
+      height: 4px;
+      background: var(--muted);
+      opacity: 0.4;
+      border-radius: 99px;
+      margin: 0 auto 14px;
+    }
+    .sheet-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin: 0 0 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .theme-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
       gap: 8px;
-      margin-bottom: 14px;
-      background: var(--surface);
+      margin-bottom: 16px;
+    }
+    .theme-pill {
+      padding: 10px 6px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+    }
+    .field-group { margin-bottom: 14px; }
+    .field-group label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+    .field-group input, .field-group select {
+      width: 100%;
       padding: 10px 12px;
       border-radius: 10px;
       border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
     }
-    .chapter-nav select { flex: 1; min-width: 0; }
-    .chunk-list { display: flex; flex-direction: column; gap: 10px; }
-    .chunk-item {
-      padding: 14px 16px;
-      border-radius: 10px;
-      background: var(--surface);
-      border: 1px solid transparent;
+    .toc-item {
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 15px;
       cursor: pointer;
-      font-size: 17px;
-      line-height: 1.75;
-      position: relative;
-    }
-    .chunk-item:hover { background: var(--surface-hover); border-color: #475569; }
-    .chunk-item.active {
-      background: var(--active-bg);
-      border-color: var(--primary);
-    }
-    .chunk-item.cached::after {
-      content: "●";
-      color: var(--cached);
-      font-size: 10px;
-      position: absolute;
-      top: 8px;
-      right: 10px;
-    }
-    .player-bar {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: rgba(11, 17, 32, 0.96);
-      backdrop-filter: blur(12px);
-      border-top: 1px solid var(--border);
-      padding: 10px 14px;
-      z-index: 40;
-    }
-    .player-inner {
-      max-width: 860px;
-      margin: 0 auto;
       display: flex;
-      flex-wrap: wrap;
-      align-items: center;
       justify-content: space-between;
-      gap: 8px;
     }
-    .player-controls { display: flex; align-items: center; gap: 8px; }
-    .player-info { font-size: 13px; color: var(--muted); }
-    audio { height: 34px; max-width: 240px; }
+    .toc-item.current {
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .empty-welcome {
+      text-align: center;
+      padding: 70px 20px;
+    }
+    .primary-cta {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 999px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 12px;
+    }
   </style>
 </head>
-<body>
-  <header>
-    <div class="brand">📖 Đọc Truyện Trực Tiếp (EPUB / TXT)</div>
-    <div class="status-bar" id="statusBar">Dán API Key và chọn sách để nghe ngay</div>
+<body data-theme="sepia">
+  <!-- THANH TRÊN TỐI GIẢN -->
+  <header class="top-bar">
+    <button class="icon-btn" onclick="openSheet('tocSheet')">☰ Mục lục</button>
+    <div class="book-header-title" id="topBookTitle">Apple Books AI</div>
+    <button class="icon-btn" onclick="openSheet('settingsSheet')">Aa / ⚙️</button>
   </header>
 
-  <div class="container">
-    <!-- THANH CÔNG CỤ -->
-    <div class="toolbar">
-      <div>
-        <label>🔑 Gemini API Key (AI Studio):</label>
-        <input type="password" id="apiKeyInput" placeholder="Dán API Key vào đây..." />
-      </div>
-      <div>
-        <label>📂 Mở file sách (.epub / .txt):</label>
-        <input type="file" id="fileInput" accept=".epub,.txt,application/epub+zip,text/plain" />
-      </div>
-      <div>
-        <label>🎙 Giọng đọc Gemini:</label>
-        <select id="voiceSelect">
-          <option value="Aoede">Aoede (Nữ - Tự nhiên)</option>
-          <option value="Sulafat">Sulafat (Nữ - Ấm áp)</option>
-          <option value="Kore">Kore (Nữ - Rõ ràng)</option>
-          <option value="Charon">Charon (Nam - Trầm ấm)</option>
-          <option value="Orus">Orus (Nam - Uy nghiêm)</option>
-          <option value="Puck">Puck (Nam - Nhanh nhẹn)</option>
-        </select>
-      </div>
-      <div>
-        <label>⚡ Tốc độ phát:</label>
-        <select id="speedSelect">
-          <option value="1">1.0x (Chuẩn)</option>
-          <option value="1.15" selected>1.15x (Mượt)</option>
-          <option value="1.25">1.25x (Nhanh)</option>
-          <option value="1.5">1.5x (Rất nhanh)</option>
-        </select>
-      </div>
+  <!-- TRANG SÁCH CHÍNH -->
+  <main class="book-page">
+    <div id="emptyState" class="empty-welcome">
+      <div style="font-size: 46px; margin-bottom: 10px;">📖</div>
+      <h2 style="margin: 0 0 8px; font-weight: 700;">Chưa mở cuốn sách nào</h2>
+      <p style="color: var(--muted); font-size: 15px; margin: 0 0 18px;">
+        Mở file <b>.EPUB</b> hoặc <b>.TXT</b> trực tiếp trên máy để đọc và nghe giọng AI tự nhiên.
+      </p>
+      <button class="primary-cta" onclick="document.getElementById('fileInput').click()">📂 Chọn file sách (.EPUB / .TXT)</button>
     </div>
 
-    <!-- CHỌN CHƯƠNG -->
-    <div class="chapter-nav">
-      <button class="secondary" onclick="changeChapter(-1)">◀</button>
-      <select id="chapterSelect" onchange="selectChapter(parseInt(this.value, 10), 0, isPlaying)"></select>
-      <button class="secondary" onclick="changeChapter(1)">▶</button>
+    <div id="readerContainer" style="display: none;">
+      <h1 class="chapter-heading" id="chapterHeading"></h1>
+      <div id="storyContent"></div>
+      <div class="chapter-footer-nav">
+        <button class="nav-pill" onclick="changeChapter(-1)">← Chương trước</button>
+        <span style="font-size: 12px; color: var(--muted);" id="footerPageInfo"></span>
+        <button class="nav-pill" onclick="changeChapter(1)">Chương sau →</button>
+      </div>
     </div>
+  </main>
 
-    <!-- NỘI DUNG TRUYỆN -->
-    <div class="chunk-list" id="chunkList"></div>
+  <!-- MINI PLAYER NỔI KIỂU APPLE BOOKS -->
+  <div class="mini-player">
+    <div class="player-top-row">
+      <div class="player-meta">
+        <div class="player-status" id="playerStatus">Sẵn sàng</div>
+        <div class="player-sub" id="playerSub">Chạm vào đoạn văn bất kỳ để nghe</div>
+      </div>
+      <div class="player-btns">
+        <button class="skip-btn" onclick="prevBlock()" title="Đoạn trước">⏮</button>
+        <button class="play-circle" id="playBtn" onclick="togglePlay()">▶</button>
+        <button class="skip-btn" onclick="nextBlock()" title="Đoạn sau">⏭</button>
+      </div>
+    </div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="audioProgress"></div>
+    </div>
+    <audio id="audioPlayer" preload="auto"></audio>
   </div>
 
-  <!-- THANH PHÁT ÂM THANH -->
-  <div class="player-bar">
-    <div class="player-inner">
-      <div class="player-controls">
-        <button class="secondary" onclick="prevChunk()">⏮</button>
-        <button id="playPauseBtn" onclick="togglePlay()">▶ Phát ngay</button>
-        <button class="secondary" onclick="nextChunk()">⏭</button>
+  <!-- BACKDROP -->
+  <div class="sheet-backdrop" id="backdrop" onclick="closeAllSheets()"></div>
+
+  <!-- SHEET 1: MỤC LỤC & MỞ SÁCH -->
+  <div class="bottom-sheet" id="tocSheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">
+      <span>Mục lục</span>
+      <button class="icon-btn" onclick="document.getElementById('fileInput').click()">+ Mở sách khác</button>
+    </div>
+    <input type="file" id="fileInput" accept=".epub,.txt,application/epub+zip,text/plain" style="display: none;" />
+    <div id="tocList"></div>
+  </div>
+
+  <!-- SHEET 2: GIAO DIỆN AA & CẤU HÌNH GIỌNG ĐỌC -->
+  <div class="bottom-sheet" id="settingsSheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">
+      <span>Giao diện & Giọng đọc</span>
+      <button class="icon-btn" onclick="closeAllSheets()">Xong</button>
+    </div>
+
+    <div class="theme-grid">
+      <div class="theme-pill" style="background:#ffffff; color:#1d1d1f;" onclick="setTheme('light')">Sáng</div>
+      <div class="theme-pill" style="background:#fbf8f3; color:#1c1917;" onclick="setTheme('sepia')">Giấy ngà</div>
+      <div class="theme-pill" style="background:#3a3a3c; color:#e5e5ea;" onclick="setTheme('gray')">Xám dịu</div>
+      <div class="theme-pill" style="background:#000000; color:#f2f2f7;" onclick="setTheme('dark')">Tối OLED</div>
+    </div>
+
+    <div class="field-group">
+      <label>Cỡ chữ trang sách:</label>
+      <div style="display: flex; gap: 10px;">
+        <button class="nav-pill" style="flex:1;" onclick="changeFontSize(-1)">A-</button>
+        <button class="nav-pill" style="flex:1;" onclick="changeFontSize(1)">A+</button>
       </div>
-      <div class="player-info" id="playerInfo">Chưa mở sách</div>
-      <audio id="audioPlayer" controls></audio>
+    </div>
+
+    <div class="field-group">
+      <label>Gemini API Key (AI Studio):</label>
+      <input type="password" id="apiKeyInput" placeholder="Dán API Key vào đây..." />
+    </div>
+
+    <div class="field-group">
+      <label>Giọng đọc:</label>
+      <select id="voiceSelect">
+        <option value="Aoede">Aoede (Nữ - Nhẹ nhàng, tự nhiên)</option>
+        <option value="Sulafat">Sulafat (Nữ - Ấm áp, kể chuyện)</option>
+        <option value="Kore">Kore (Nữ - Rõ ràng)</option>
+        <option value="Charon">Charon (Nam - Trầm ấm)</option>
+        <option value="Orus">Orus (Nam - Uy nghiêm)</option>
+        <option value="Puck">Puck (Nam - Nhanh nhẹn)</option>
+      </select>
+    </div>
+
+    <div class="field-group">
+      <label>Tốc độ đọc:</label>
+      <select id="speedSelect">
+        <option value="1">1.0x (Chuẩn)</option>
+        <option value="1.15" selected>1.15x (Mượt mà)</option>
+        <option value="1.25">1.25x (Nhanh)</option>
+        <option value="1.5">1.5x (Rất nhanh)</option>
+      </select>
     </div>
   </div>
 
   <script>
-    const DB_NAME = "LocalStoryReaderDB";
+    const DB_NAME = "AppleBooksAIDB";
     const STORE_NAME = "books";
 
     let currentBook = null;
     let currentChapterIdx = 0;
-    let chunks = [];
-    let currentChunkIdx = 0;
+    let blocks = []; // Mỗi block gom ~2.200 ký tự (~2.5 phút nghe -> chỉ tốn 1 request/2.5 phút, không bao giờ chạm limit 3/phút)
+    let currentBlockIdx = 0;
     let isPlaying = false;
+    let preloadedNext = false;
 
     const audioCache = new Map();
     const pendingFetches = new Map();
 
-    const statusBar = document.getElementById("statusBar");
-    const playerInfo = document.getElementById("playerInfo");
     const audioPlayer = document.getElementById("audioPlayer");
+    const playerStatus = document.getElementById("playerStatus");
+    const playerSub = document.getElementById("playerSub");
+    const playBtn = document.getElementById("playBtn");
     const apiKeyInput = document.getElementById("apiKeyInput");
     const voiceSelect = document.getElementById("voiceSelect");
     const speedSelect = document.getElementById("speedSelect");
+
+    // Khôi phục giao diện & cài đặt
+    const savedTheme = localStorage.getItem("ab_theme") || "sepia";
+    document.body.setAttribute("data-theme", savedTheme);
+    let fontSize = parseInt(localStorage.getItem("ab_fontsize") || "19", 10);
+    document.documentElement.style.setProperty("--font-size", fontSize + "px");
 
     apiKeyInput.value = localStorage.getItem("sr_direct_gemini_key") || "";
     voiceSelect.value = localStorage.getItem("sr_voice") || "Aoede";
     speedSelect.value = localStorage.getItem("sr_speed") || "1.15";
 
-    apiKeyInput.addEventListener("input", () => {
-      localStorage.setItem("sr_direct_gemini_key", apiKeyInput.value.trim());
-    });
+    apiKeyInput.addEventListener("input", () => localStorage.setItem("sr_direct_gemini_key", apiKeyInput.value.trim()));
     voiceSelect.addEventListener("change", () => {
       localStorage.setItem("sr_voice", voiceSelect.value);
       clearAudioCache();
@@ -234,8 +496,30 @@
       audioPlayer.playbackRate = parseFloat(speedSelect.value);
     });
 
+    function setTheme(theme) {
+      document.body.setAttribute("data-theme", theme);
+      localStorage.setItem("ab_theme", theme);
+    }
+
+    function changeFontSize(delta) {
+      fontSize = Math.min(28, Math.max(15, fontSize + delta));
+      document.documentElement.style.setProperty("--font-size", fontSize + "px");
+      localStorage.setItem("ab_fontsize", String(fontSize));
+    }
+
+    function openSheet(id) {
+      closeAllSheets();
+      document.getElementById("backdrop").classList.add("open");
+      document.getElementById(id).classList.add("open");
+    }
+
+    function closeAllSheets() {
+      document.getElementById("backdrop").classList.remove("open");
+      document.querySelectorAll(".bottom-sheet").forEach((el) => el.classList.remove("open"));
+    }
+
     // =================================================================
-    // LƯU SÁCH & TIẾN ĐỘ TRỰC TIẾP TRÊN BỘ NHỚ MÁY (INDEXEDDB)
+    // LƯU TRỮ LOCAL (INDEXEDDB)
     // =================================================================
     function openLocalDB() {
       return new Promise((resolve, reject) => {
@@ -248,11 +532,10 @@
 
     async function saveBookToDevice(book) {
       const db = await openLocalDB();
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve) => {
         const tx = db.transaction(STORE_NAME, "readwrite");
         tx.objectStore(STORE_NAME).put(book);
         tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
       });
     }
 
@@ -267,7 +550,7 @@
     }
 
     // =================================================================
-    // GIẢI NÉN EPUB / TXT TRỰC TIẾP TRÊN TRÌNH DUYỆT
+    // GIẢI NÉN EPUB / TXT
     // =================================================================
     function resolveZipPath(baseDir, href) {
       const cleanHref = decodeURIComponent(href.split("#")[0]);
@@ -287,10 +570,10 @@
       const heading = doc.querySelector("h1, h2, h3, title");
       const headingText = heading ? heading.textContent.replace(/\s+/g, " ").trim() : "";
 
-      const blocks = doc.querySelectorAll("p, div, h1, h2, h3, h4, li");
+      const nodes = doc.querySelectorAll("p, div, h1, h2, h3, h4, li");
       const lines = [];
-      if (blocks.length > 0) {
-        blocks.forEach((b) => {
+      if (nodes.length > 0) {
+        nodes.forEach((b) => {
           if (b.tagName === "DIV" && b.querySelector("p, div, h1, h2, h3")) return;
           const t = b.textContent.replace(/\s+/g, " ").trim();
           if (t) lines.push(t);
@@ -382,135 +665,148 @@
     document.getElementById("fileInput").addEventListener("change", async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
-
-      statusBar.textContent = "⏳ Đang mở sách...";
+      closeAllSheets();
+      playerStatus.textContent = "Đang mở sách...";
       try {
-        let bookData;
-        if (file.name.toLowerCase().endsWith(".epub")) {
-          bookData = await parseEpubFile(file);
-        } else {
-          const text = await file.text();
-          const title = file.name.replace(/\.txt$/i, "");
-          bookData = { title, chapters: parseTxtFile(text, title) };
-        }
+        const bookData = file.name.toLowerCase().endsWith(".epub")
+          ? await parseEpubFile(file)
+          : { title: file.name.replace(/\.txt$/i, ""), chapters: parseTxtFile(await file.text(), file.name) };
 
-        if (!bookData.chapters.length) throw new Error("Không tìm thấy nội dung truyện!");
-
+        if (!bookData.chapters.length) throw new Error("Không tìm thấy nội dung sách.");
         currentBook = {
           id: "active_book",
           title: bookData.title,
           chapters: bookData.chapters,
           lastChapter: 0,
-          lastChunk: 0
+          lastBlock: 0
         };
         await saveBookToDevice(currentBook);
         renderBook(0, 0);
-        statusBar.textContent = `✅ Đã mở "${currentBook.title}" (${currentBook.chapters.length} chương)`;
       } catch (err) {
         alert("Lỗi mở file: " + err.message);
-        statusBar.textContent = "❌ Lỗi đọc file";
+        playerStatus.textContent = "Lỗi mở file";
       }
     });
 
     // =================================================================
-    // CHIA ĐOẠN & GỌI TRỰC TIẾP GEMINI API (KHÔNG QUA SERVER TRUNG GIAN)
+    // GOM ĐOẠN LỚN (~2.200 KÝ TỰ) ĐỂ KHÔNG VƯỢT QUOTA 3 REQUEST/PHÚT
     // =================================================================
-    function splitChapterToChunks(rawText, maxLen = 550) {
-      const result = [];
-      for (const p of rawText.split(/\n+/).map((x) => x.trim()).filter(Boolean)) {
-        if (p.length <= maxLen) {
-          result.push(p);
-          continue;
+    function groupParagraphsToBlocks(rawText, maxChars = 2200) {
+      const paragraphs = rawText.split(/\n+/).map((x) => x.trim()).filter(Boolean);
+      const grouped = [];
+      let currentGroup = [];
+      let currentLen = 0;
+
+      for (const p of paragraphs) {
+        if (currentLen + p.length > maxChars && currentGroup.length > 0) {
+          grouped.push(currentGroup);
+          currentGroup = [p];
+          currentLen = p.length;
+        } else {
+          currentGroup.push(p);
+          currentLen += p.length;
         }
-        const sentences = p.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [p];
-        let buf = "";
-        for (const s of sentences) {
-          if ((buf + " " + s).trim().length <= maxLen) {
-            buf = (buf + " " + s).trim();
-          } else {
-            if (buf) result.push(buf);
-            buf = s.trim();
-          }
-        }
-        if (buf) result.push(buf);
       }
-      return result;
+      if (currentGroup.length > 0) grouped.push(currentGroup);
+      return grouped;
     }
 
-    function renderBook(chapIdx, chunkIdx) {
+    function renderBook(chapIdx, blockIdx) {
       if (!currentBook?.chapters?.length) return;
-      const chapSelect = document.getElementById("chapterSelect");
-      chapSelect.innerHTML = "";
+      document.getElementById("emptyState").style.display = "none";
+      document.getElementById("readerContainer").style.display = "block";
+      document.getElementById("topBookTitle").textContent = currentBook.title;
+
+      const tocList = document.getElementById("tocList");
+      tocList.innerHTML = "";
       currentBook.chapters.forEach((c, i) => {
-        const opt = document.createElement("option");
-        opt.value = i;
-        opt.textContent = c.title;
-        chapSelect.appendChild(opt);
+        const div = document.createElement("div");
+        div.className = "toc-item";
+        div.id = `toc-${i}`;
+        div.textContent = c.title;
+        div.onclick = () => {
+          closeAllSheets();
+          selectChapter(i, 0, isPlaying);
+        };
+        tocList.appendChild(div);
       });
-      selectChapter(Math.min(Math.max(0, chapIdx), currentBook.chapters.length - 1), chunkIdx, false);
+
+      selectChapter(Math.min(Math.max(0, chapIdx), currentBook.chapters.length - 1), blockIdx, false);
     }
 
-    function selectChapter(chapIdx, startChunkIdx = 0, autoPlay = true) {
+    function selectChapter(chapIdx, startBlockIdx = 0, autoPlay = true) {
       if (!currentBook || chapIdx < 0 || chapIdx >= currentBook.chapters.length) return;
       clearAudioCache();
       currentChapterIdx = chapIdx;
-      document.getElementById("chapterSelect").value = chapIdx;
 
-      chunks = splitChapterToChunks(currentBook.chapters[chapIdx].content, 550);
-      currentChunkIdx = Math.min(Math.max(0, startChunkIdx), Math.max(0, chunks.length - 1));
+      document.querySelectorAll(".toc-item").forEach((el, i) => el.classList.toggle("current", i === chapIdx));
+      const chapter = currentBook.chapters[chapIdx];
+      document.getElementById("chapterHeading").textContent = chapter.title;
+      document.getElementById("footerPageInfo").textContent = `Chương ${chapIdx + 1} / ${currentBook.chapters.length}`;
 
-      const listEl = document.getElementById("chunkList");
-      listEl.innerHTML = "";
-      chunks.forEach((text, idx) => {
-        const div = document.createElement("div");
-        div.className = "chunk-item" + (idx === currentChunkIdx ? " active" : "");
-        div.id = `chunk-${idx}`;
-        div.textContent = text;
-        div.onclick = () => playFromIndex(idx);
-        listEl.appendChild(div);
+      blocks = groupParagraphsToBlocks(chapter.content, 2200);
+      currentBlockIdx = Math.min(Math.max(0, startBlockIdx), Math.max(0, blocks.length - 1));
+
+      const container = document.getElementById("storyContent");
+      container.innerHTML = "";
+      blocks.forEach((paraList, idx) => {
+        const blockDiv = document.createElement("div");
+        blockDiv.className = "story-block" + (idx === currentBlockIdx ? " active" : "");
+        blockDiv.id = `block-${idx}`;
+        paraList.forEach((pText) => {
+          const p = document.createElement("p");
+          p.textContent = pText;
+          blockDiv.appendChild(p);
+        });
+        blockDiv.onclick = () => playBlock(idx);
+        container.appendChild(blockDiv);
       });
 
       updateHighlight();
-      preloadChunk(currentChunkIdx);
-      preloadChunk(currentChunkIdx + 1);
-      if (autoPlay) playFromIndex(currentChunkIdx);
+      if (autoPlay) playBlock(currentBlockIdx);
     }
 
     function changeChapter(delta) {
       if (!currentBook) return;
-      const target = currentChapterIdx + delta;
-      if (target >= 0 && target < currentBook.chapters.length) {
-        selectChapter(target, 0, isPlaying);
+      const next = currentChapterIdx + delta;
+      if (next >= 0 && next < currentBook.chapters.length) {
+        selectChapter(next, 0, isPlaying);
+        window.scrollTo({ top: 0, behavior: "smooth" });
       }
     }
 
-    function getCacheKey(chapIdx, chunkIdx) {
-      return `${voiceSelect.value}:${chapIdx}:${chunkIdx}`;
+    function getCacheKey(chapIdx, blockIdx) {
+      return `${voiceSelect.value}:${chapIdx}:${blockIdx}`;
     }
 
     function clearAudioCache() {
       for (const url of audioCache.values()) URL.revokeObjectURL(url);
       audioCache.clear();
       pendingFetches.clear();
-      updateHighlight();
+      preloadedNext = false;
     }
 
     function updateHighlight() {
-      document.querySelectorAll(".chunk-item").forEach((el, idx) => {
-        el.classList.toggle("active", idx === currentChunkIdx);
-        el.classList.toggle("cached", audioCache.has(getCacheKey(currentChapterIdx, idx)));
+      document.querySelectorAll(".story-block").forEach((el, idx) => {
+        el.classList.toggle("active", idx === currentBlockIdx);
       });
-      playerInfo.textContent = currentBook
-        ? `Ch.${currentChapterIdx + 1}/${currentBook.chapters.length} • Đoạn ${currentChunkIdx + 1}/${chunks.length}`
-        : "Chưa mở sách";
+      playerSub.textContent = currentBook
+        ? `Chương ${currentChapterIdx + 1}/${currentBook.chapters.length} • Đoạn ${currentBlockIdx + 1}/${blocks.length}`
+        : "Chạm vào đoạn văn bất kỳ để nghe";
 
-      const activeEl = document.getElementById(`chunk-${currentChunkIdx}`);
+      const activeEl = document.getElementById(`block-${currentBlockIdx}`);
       if (activeEl) activeEl.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
-    async function fetchAudioDirectFromGemini(text) {
+    // =================================================================
+    // GỌI GEMINI TTS VỚI CƠ CHẾ TỰ CHỜ KHI CHẠM RATE LIMIT
+    // =================================================================
+    async function fetchAudioWithRetry(text, attempt = 1) {
       const apiKey = apiKeyInput.value.trim();
-      if (!apiKey) throw new Error("Vui lòng dán Gemini API Key vào ô trên cùng!");
+      if (!apiKey) {
+        openSheet("settingsSheet");
+        throw new Error("Vui lòng nhập Gemini API Key");
+      }
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-lite-tts:generateContent?key=${encodeURIComponent(apiKey)}`;
       const resp = await fetch(url, {
@@ -524,7 +820,7 @@
                 {
                   text,
                   speech_metadata: {
-                    style: "Giọng kể chuyện truyền cảm, tự nhiên, ngắt nghỉ đúng nhịp"
+                    style: "Giọng kể chuyện truyền cảm, ấm áp, tự nhiên, ngắt nghỉ đúng nhịp"
                   }
                 }
               ]
@@ -533,9 +829,7 @@
           generationConfig: {
             responseModalities: ["AUDIO"],
             speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: voiceSelect.value }
-              }
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceSelect.value } }
             }
           }
         })
@@ -543,37 +837,39 @@
 
       const data = await resp.json();
       if (!resp.ok) {
-        throw new Error(data.error?.message || `HTTP ${resp.status}`);
+        const msg = data.error?.message || `HTTP ${resp.status}`;
+        // Nếu dính giới hạn 3 lượt/phút, tự động đếm ngược và thử lại
+        const retryMatch = msg.match(/retry in\s+([\d.]+)s/i);
+        if ((resp.status === 429 || retryMatch) && attempt <= 2) {
+          const waitSec = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) + 1 : 25;
+          playerStatus.textContent = `Đang chờ giới hạn Google (${waitSec}s)...`;
+          await new Promise((r) => setTimeout(r, waitSec * 1000));
+          return fetchAudioWithRetry(text, attempt + 1);
+        }
+        throw new Error(msg);
       }
 
       const audioPart = data.candidates?.[0]?.content?.parts?.find((p) => p.inlineData);
-      if (!audioPart?.inlineData?.data) {
-        throw new Error("Gemini không trả về dữ liệu âm thanh");
-      }
+      if (!audioPart?.inlineData?.data) throw new Error("Không có dữ liệu âm thanh");
 
       const byteChars = atob(audioPart.inlineData.data);
       const byteArray = new Uint8Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) {
-        byteArray[i] = byteChars.charCodeAt(i);
-      }
-      const blob = new Blob([byteArray], { type: audioPart.inlineData.mimeType || "audio/wav" });
-      return URL.createObjectURL(blob);
+      for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
+      return URL.createObjectURL(new Blob([byteArray], { type: audioPart.inlineData.mimeType || "audio/wav" }));
     }
 
-    async function preloadChunk(chunkIdx) {
-      if (chunkIdx < 0 || chunkIdx >= chunks.length) return null;
-      if (!apiKeyInput.value.trim()) return null;
-
+    async function getOrFetchBlockAudio(blockIdx) {
+      if (blockIdx < 0 || blockIdx >= blocks.length) return null;
       const chapSnap = currentChapterIdx;
-      const key = getCacheKey(chapSnap, chunkIdx);
+      const key = getCacheKey(chapSnap, blockIdx);
       if (audioCache.has(key)) return audioCache.get(key);
       if (pendingFetches.has(key)) return pendingFetches.get(key);
 
-      const promise = fetchAudioDirectFromGemini(chunks[chunkIdx])
+      const textToRead = blocks[blockIdx].join("\n");
+      const promise = fetchAudioWithRetry(textToRead)
         .then((url) => {
           audioCache.set(key, url);
           pendingFetches.delete(key);
-          if (currentChapterIdx === chapSnap) updateHighlight();
           return url;
         })
         .catch((err) => {
@@ -585,92 +881,102 @@
       return promise;
     }
 
-    async function playFromIndex(idx) {
-      if (idx < 0 || idx >= chunks.length) {
+    async function playBlock(idx) {
+      if (idx < 0 || idx >= blocks.length) {
         if (currentBook && currentChapterIdx + 1 < currentBook.chapters.length) {
           selectChapter(currentChapterIdx + 1, 0, true);
           return;
         }
         isPlaying = false;
-        document.getElementById("playPauseBtn").textContent = "▶ Phát ngay";
-        statusBar.textContent = "✅ Đã đọc hết sách.";
+        playBtn.textContent = "▶";
+        playerStatus.textContent = "Đã đọc hết sách";
         return;
       }
 
-      currentChunkIdx = idx;
+      currentBlockIdx = idx;
       isPlaying = true;
-      document.getElementById("playPauseBtn").textContent = "⏸ Tạm dừng";
+      preloadedNext = false;
+      playBtn.textContent = "⏸";
       updateHighlight();
 
       if (currentBook) {
         currentBook.lastChapter = currentChapterIdx;
-        currentBook.lastChunk = currentChunkIdx;
-        saveBookToDevice(currentBook).catch(() => {});
+        currentBook.lastBlock = currentBlockIdx;
+        saveBookToDevice(currentBook);
       }
 
-      const isCached = audioCache.has(getCacheKey(currentChapterIdx, idx));
-      statusBar.textContent = isCached
-        ? `⚡ Đang phát ngay đoạn ${idx + 1}...`
-        : `⏳ Đang tạo giọng đoạn ${idx + 1}...`;
+      playerStatus.textContent = audioCache.has(getCacheKey(currentChapterIdx, idx))
+        ? `Đang đọc đoạn ${idx + 1}...`
+        : `Đang tạo giọng đoạn ${idx + 1}...`;
 
       try {
-        const blobUrl = await preloadChunk(idx);
-        if (currentChunkIdx !== idx || !isPlaying) return;
+        const blobUrl = await getOrFetchBlockAudio(idx);
+        if (currentBlockIdx !== idx || !isPlaying) return;
 
         audioPlayer.src = blobUrl;
         audioPlayer.playbackRate = parseFloat(speedSelect.value);
         await audioPlayer.play();
-        statusBar.textContent = `🔊 ${currentBook?.chapters[currentChapterIdx]?.title || ""} (${idx + 1}/${chunks.length})`;
-
-        preloadChunk(idx + 1);
-        preloadChunk(idx + 2);
+        playerStatus.textContent = currentBook?.chapters[currentChapterIdx]?.title || "Đang phát";
       } catch (err) {
-        statusBar.textContent = `❌ Lỗi: ${err.message}`;
+        playerStatus.textContent = err.message;
         isPlaying = false;
-        document.getElementById("playPauseBtn").textContent = "▶ Phát ngay";
+        playBtn.textContent = "▶";
       }
     }
 
+    // Chỉ tải trước đoạn kế tiếp khi đoạn hiện tại đã phát được 70% (tránh gọi dồn gây lỗi 429)
+    audioPlayer.addEventListener("timeupdate", () => {
+      if (!audioPlayer.duration) return;
+      const pct = (audioPlayer.currentTime / audioPlayer.duration) * 100;
+      document.getElementById("audioProgress").style.width = pct + "%";
+
+      if (pct >= 70 && !preloadedNext && isPlaying && currentBlockIdx + 1 < blocks.length) {
+        preloadedNext = true;
+        getOrFetchBlockAudio(currentBlockIdx + 1).catch(() => {});
+      }
+    });
+
     audioPlayer.addEventListener("ended", () => {
-      if (isPlaying) playFromIndex(currentChunkIdx + 1);
+      if (isPlaying) playBlock(currentBlockIdx + 1);
     });
 
     function togglePlay() {
-      if (!chunks.length) {
+      if (!blocks.length) {
         document.getElementById("fileInput").click();
         return;
       }
       if (isPlaying) {
         isPlaying = false;
         audioPlayer.pause();
-        document.getElementById("playPauseBtn").textContent = "▶ Tiếp tục";
-        statusBar.textContent = "⏸ Đã tạm dừng.";
+        playBtn.textContent = "▶";
+        playerStatus.textContent = "Tạm dừng";
       } else {
         if (audioPlayer.src && audioPlayer.paused && audioPlayer.currentTime > 0) {
           isPlaying = true;
           audioPlayer.play();
-          document.getElementById("playPauseBtn").textContent = "⏸ Tạm dừng";
+          playBtn.textContent = "⏸";
+          playerStatus.textContent = currentBook?.chapters[currentChapterIdx]?.title || "Đang phát";
         } else {
-          playFromIndex(currentChunkIdx);
+          playBlock(currentBlockIdx);
         }
       }
     }
 
-    function prevChunk() {
-      if (currentChunkIdx > 0) playFromIndex(currentChunkIdx - 1);
+    function prevBlock() {
+      if (currentBlockIdx > 0) playBlock(currentBlockIdx - 1);
       else if (currentChapterIdx > 0) selectChapter(currentChapterIdx - 1, 0, true);
     }
 
-    function nextChunk() {
-      playFromIndex(currentChunkIdx + 1);
+    function nextBlock() {
+      playBlock(currentBlockIdx + 1);
     }
 
     (async function init() {
       const saved = await loadBookFromDevice("active_book");
       if (saved?.chapters?.length) {
         currentBook = saved;
-        renderBook(saved.lastChapter || 0, saved.lastChunk || 0);
-        statusBar.textContent = `📖 Đã khôi phục: ${saved.title}`;
+        renderBook(saved.lastChapter || 0, saved.lastBlock || 0);
+        playerStatus.textContent = saved.title;
       }
     })();
   </script>

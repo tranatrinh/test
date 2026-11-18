@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kho Truyện Audio AI - Gemini 3.8 TTS</title>
+  <!-- Thư viện JSZip giải nén trực tiếp file .epub trên trình duyệt -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
     :root {
       --bg: #0b1120;
@@ -52,7 +54,7 @@
     }
     .status-bar { font-size: 13px; color: #38bdf8; }
     .container { max-width: 900px; margin: 20px auto; padding: 0 16px; }
-    .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
     .tab-btn {
       background: var(--surface);
       color: var(--muted);
@@ -108,7 +110,6 @@
     button:disabled { opacity: 0.45; cursor: not-allowed; }
     .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 
-    /* Danh sách tủ sách */
     .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
     .book-card {
       background: var(--bg);
@@ -123,7 +124,6 @@
     .book-title { font-weight: 700; font-size: 15px; color: #f8fafc; }
     .book-meta { font-size: 12px; color: var(--muted); }
 
-    /* Giao diện đọc truyện */
     .chapter-nav {
       display: flex;
       flex-wrap: wrap;
@@ -162,7 +162,6 @@
       right: 10px;
     }
 
-    /* Thanh điều khiển âm thanh cố định */
     .player-bar {
       position: fixed;
       bottom: 0;
@@ -192,7 +191,7 @@
   <header>
     <div class="brand">
       <span>📖 Kho Truyện Audio AI</span>
-      <span class="badge">Cloudflare + Gemini 3.8</span>
+      <span class="badge">Cloudflare + Gemini 3.8 + EPUB</span>
     </div>
     <div class="status-bar" id="statusBar">Đang kết nối Worker...</div>
   </header>
@@ -214,17 +213,17 @@
       </div>
 
       <div id="emptyReaderHint" class="panel">
-        <p style="margin: 0 0 10px;">Chưa có truyện nào được mở. Bạn có thể chọn truyện từ <b>Tủ sách Cloud</b> hoặc nạp nhanh truyện mới.</p>
+        <p style="margin: 0 0 10px;">Chưa có truyện nào được mở. Bạn có thể chọn truyện từ <b>Tủ sách Cloud</b> hoặc nạp file <b>.EPUB / .TXT</b> mới.</p>
         <div class="btn-row">
           <button onclick="switchTab('library')">📚 Mở Tủ sách Cloud</button>
-          <button class="secondary" onclick="switchTab('import')">➕ Nạp truyện mới</button>
+          <button class="secondary" onclick="switchTab('import')">➕ Nạp truyện EPUB / TXT</button>
         </div>
       </div>
 
       <div class="chunk-list" id="chunkList"></div>
     </div>
 
-    <!-- TAB 2: TỦ SÁCH ĐÁM MÂY (ĐỒNG BỘ GITHUB QUA WORKER) -->
+    <!-- TAB 2: TỦ SÁCH ĐÁM MÂY -->
     <div id="viewLibrary" class="hidden">
       <div class="panel">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
@@ -237,29 +236,30 @@
       </div>
     </div>
 
-    <!-- TAB 3: THÊM TRUYỆN MỚI -->
+    <!-- TAB 3: THÊM TRUYỆN MỚI (HỖ TRỢ CẢ .EPUB VÀ .TXT) -->
     <div id="viewImport" class="hidden">
       <div class="panel">
-        <h3 style="margin: 0 0 12px; font-size: 16px;">➕ Thêm truyện mới & Lưu lên Cloud</h3>
+        <h3 style="margin: 0 0 12px; font-size: 16px;">➕ Thêm truyện mới (.EPUB / .TXT) & Lưu lên Cloud</h3>
         <div class="grid-2" style="margin-bottom: 12px;">
           <div>
             <label>Tên truyện:</label>
-            <input type="text" id="newBookTitle" placeholder="Ví dụ: Già Thiên - Quyển 1" />
+            <input type="text" id="newBookTitle" placeholder="Tự động điền khi chọn file EPUB/TXT..." />
           </div>
           <div>
-            <label>Chọn file văn bản (.txt) từ máy:</label>
-            <input type="file" id="newBookFile" accept=".txt" />
+            <label>Chọn file sách (.epub hoặc .txt):</label>
+            <input type="file" id="newBookFile" accept=".epub,.txt,application/epub+zip,text/plain" />
           </div>
         </div>
-        <label>Hoặc dán toàn bộ nội dung truyện (Hệ thống tự tách chương nếu có chữ "Chương 1", "Chương 2"...):</label>
-        <textarea id="newBookContent" placeholder="Chương 1: Khởi đầu...&#10;Nội dung chương 1...&#10;&#10;Chương 2: Diễn biến..."></textarea>
+        <div id="epubSummaryBox" class="hidden" style="background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.35); color: #6ee7b7; padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 12px;"></div>
+        <label>Hoặc dán nội dung văn bản (nếu không dùng file EPUB):</label>
+        <textarea id="newBookContent" placeholder="Chương 1: Khởi đầu...&#10;Nội dung chương 1..."></textarea>
         <div class="btn-row">
           <button id="saveBookBtn" onclick="createAndSaveBook()">💾 Lưu lên Cloud & Bắt đầu nghe</button>
         </div>
       </div>
     </div>
 
-    <!-- TAB 4: CÀI ĐẶT GIỌNG ĐỌC & SERVER -->
+    <!-- TAB 4: CÀI ĐẶT -->
     <div id="viewSettings" class="hidden">
       <div class="panel">
         <h3 style="margin: 0 0 12px; font-size: 16px;">⚙️ Cấu hình Giọng đọc & Backend</h3>
@@ -326,12 +326,10 @@
   </div>
 
   <script>
-    // =================================================================
-    // CẤU HÌNH MẶC ĐỊNH GẮN THẲNG WORKER CỦA BẠN
-    // =================================================================
     const DEFAULT_WORKER_URL = "https://gemini38flash-litetts.tranatrinh.workers.dev";
 
-    let currentBook = null;      // { id, title, chapters: [{ title, content }], lastChapter, lastChunk, updatedAt }
+    let currentBook = null;
+    let parsedEpubChapters = null; // Lưu tạm danh sách chương khi giải nén file .epub
     let currentChapterIdx = 0;
     let chunks = [];
     let currentChunkIdx = 0;
@@ -387,8 +385,175 @@
     }
 
     // =================================================================
-    // TÁCH CHƯƠNG & CHIA ĐOẠN VĂN BẢN THÔNG MINH
+    // BỘ GIẢI MÃ FILE EPUB TRỰC TIẾP TRÊN TRÌNH DUYỆT (DÙNG JSZIP)
     // =================================================================
+    function resolveZipPath(baseDir, href) {
+      const cleanHref = decodeURIComponent(href.split("#")[0]);
+      if (!baseDir) return cleanHref;
+      const parts = (baseDir + "/" + cleanHref).split("/");
+      const stack = [];
+      for (const p of parts) {
+        if (!p || p === ".") continue;
+        if (p === "..") stack.pop();
+        else stack.push(p);
+      }
+      return stack.join("/");
+    }
+
+    function extractTextFromHtml(htmlString) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlString, "text/html");
+      doc.querySelectorAll("script, style, nav").forEach((el) => el.remove());
+
+      const heading = doc.querySelector("h1, h2, h3, title");
+      const headingText = heading ? heading.textContent.replace(/\s+/g, " ").trim() : "";
+
+      const blocks = doc.querySelectorAll("p, div, h1, h2, h3, h4, li");
+      const lines = [];
+      if (blocks.length > 0) {
+        blocks.forEach((b) => {
+          // Bỏ qua thẻ div bao ngoài chứa nhiều thẻ p con để tránh lặp chữ
+          if (b.tagName === "DIV" && b.querySelector("p, div, h1, h2, h3")) return;
+          const t = b.textContent.replace(/\s+/g, " ").trim();
+          if (t) lines.push(t);
+        });
+      } else {
+        const fallback = doc.body ? doc.body.innerText : "";
+        fallback.split(/\r?\n/).forEach((l) => {
+          const t = l.trim();
+          if (t) lines.push(t);
+        });
+      }
+      return { headingText, text: lines.join("\n") };
+    }
+
+    async function parseEpubFile(file) {
+      if (typeof JSZip === "undefined") {
+        throw new Error("Chưa tải được thư viện JSZip. Vui lòng kiểm tra kết nối mạng!");
+      }
+      const arrayBuf = await file.arrayBuffer();
+      const zip = await JSZip.loadAsync(arrayBuf);
+
+      // 1. Đọc META-INF/container.xml để tìm đường dẫn file .opf
+      const containerFile = zip.file("META-INF/container.xml");
+      if (!containerFile) throw new Error("File EPUB không hợp lệ (thiếu container.xml).");
+      const containerXml = await containerFile.async("string");
+      const parser = new DOMParser();
+      const containerDoc = parser.parseFromString(containerXml, "application/xml");
+      const opfPath = containerDoc.querySelector("rootfile")?.getAttribute("full-path");
+      if (!opfPath) throw new Error("Không tìm thấy đường dẫn OPF trong EPUB.");
+
+      const opfDir = opfPath.includes("/") ? opfPath.substring(0, opfPath.lastIndexOf("/")) : "";
+      const opfXml = await zip.file(opfPath).async("string");
+      const opfDoc = parser.parseFromString(opfXml, "application/xml");
+
+      // Lấy tên sách từ metadata
+      const bookTitle =
+        opfDoc.querySelector("metadata title, dc\\:title")?.textContent?.trim() ||
+        file.name.replace(/\.epub$/i, "");
+
+      // 2. Lập bảng manifest (id -> href)
+      const manifest = {};
+      opfDoc.querySelectorAll("manifest > item").forEach((item) => {
+        const id = item.getAttribute("id");
+        const href = item.getAttribute("href");
+        const mediaType = item.getAttribute("media-type") || "";
+        if (id && href) {
+          manifest[id] = { href, mediaType };
+        }
+      });
+
+      // 3. Thử đọc mục lục từ NCX (EPUB 2) để lấy tên chương chuẩn xác
+      const tocTitlesByPath = {};
+      const ncxItem = Object.values(manifest).find((m) => m.mediaType.includes("ncx") || m.href.endsWith(".ncx"));
+      if (ncxItem) {
+        const ncxPath = resolveZipPath(opfDir, ncxItem.href);
+        const ncxFile = zip.file(ncxPath);
+        if (ncxFile) {
+          const ncxDir = ncxPath.includes("/") ? ncxPath.substring(0, ncxPath.lastIndexOf("/")) : "";
+          const ncxDoc = parser.parseFromString(await ncxFile.async("string"), "application/xml");
+          ncxDoc.querySelectorAll("navPoint").forEach((np) => {
+            const label = np.querySelector("navLabel > text")?.textContent?.replace(/\s+/g, " ").trim();
+            const src = np.querySelector("content")?.getAttribute("src");
+            if (label && src) {
+              const targetPath = resolveZipPath(ncxDir, src);
+              if (!tocTitlesByPath[targetPath]) tocTitlesByPath[targetPath] = label;
+            }
+          });
+        }
+      }
+
+      // 4. Duyệt danh sách các file nội dung theo đúng thứ tự spine
+      const spineIds = [];
+      opfDoc.querySelectorAll("spine > itemref").forEach((ref) => {
+        const idref = ref.getAttribute("idref");
+        if (idref && manifest[idref]) spineIds.push(idref);
+      });
+
+      const chapters = [];
+      for (let i = 0; i < spineIds.length; i++) {
+        const item = manifest[spineIds[i]];
+        if (!item.mediaType.includes("html") && !/\.(x?html?|htm)$/i.test(item.href)) continue;
+
+        const fullPath = resolveZipPath(opfDir, item.href);
+        const zipEntry = zip.file(fullPath);
+        if (!zipEntry) continue;
+
+        const rawHtml = await zipEntry.async("string");
+        const { headingText, text } = extractTextFromHtml(rawHtml);
+        if (text.trim().length < 25) continue; // Bỏ qua trang bìa hoặc trang trống
+
+        const chapTitle = tocTitlesByPath[fullPath] || headingText || `Chương ${chapters.length + 1}`;
+        chapters.push({ title: chapTitle, content: text.trim() });
+      }
+
+      if (!chapters.length) throw new Error("Không trích xuất được nội dung văn bản từ file EPUB này.");
+      return { title: bookTitle, chapters };
+    }
+
+    // =================================================================
+    // XỬ LÝ CHỌN FILE (.EPUB HOẶC .TXT)
+    // =================================================================
+    document.getElementById("newBookFile").addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const summaryBox = document.getElementById("epubSummaryBox");
+      summaryBox.classList.add("hidden");
+      parsedEpubChapters = null;
+
+      if (file.name.toLowerCase().endsWith(".epub")) {
+        statusBar.textContent = "⏳ Đang giải nén và đọc mục lục file EPUB...";
+        try {
+          const parsed = await parseEpubFile(file);
+          parsedEpubChapters = parsed.chapters;
+          if (!document.getElementById("newBookTitle").value.trim()) {
+            document.getElementById("newBookTitle").value = parsed.title;
+          }
+          document.getElementById("newBookContent").value =
+            `[Đã đọc thành công file EPUB: "${parsed.title}" - Tổng cộng ${parsed.chapters.length} chương]\n\n` +
+            `Xem trước Chương 1 (${parsed.chapters[0].title}):\n` +
+            parsed.chapters[0].content.slice(0, 600) + "...";
+
+          summaryBox.textContent = `✅ Đã giải mã EPUB "${parsed.title}" thành công (${parsed.chapters.length} chương). Bấm "Lưu lên Cloud & Bắt đầu nghe" bên dưới!`;
+          summaryBox.classList.remove("hidden");
+          statusBar.textContent = `✅ Đã nạp EPUB: ${parsed.chapters.length} chương`;
+        } catch (err) {
+          alert("Lỗi đọc file EPUB: " + err.message);
+          statusBar.textContent = "❌ Lỗi giải mã EPUB";
+        }
+      } else {
+        if (!document.getElementById("newBookTitle").value.trim()) {
+          document.getElementById("newBookTitle").value = file.name.replace(/\.txt$/i, "");
+        }
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          document.getElementById("newBookContent").value = ev.target.result;
+        };
+        reader.readAsText(file, "UTF-8");
+      }
+    });
+
     function parseChaptersFromText(rawText, fallbackTitle = "Toàn văn") {
       const lines = rawText.split(/\r?\n/);
       const chapters = [];
@@ -450,7 +615,7 @@
 
         const books = data.books || [];
         if (!books.length) {
-          grid.innerHTML = `<div style="color: var(--muted);">Chưa có truyện nào trên Cloud. Hãy qua tab <b>Thêm truyện mới</b> để nạp truyện!</div>`;
+          grid.innerHTML = `<div style="color: var(--muted);">Chưa có truyện nào trên Cloud. Hãy qua tab <b>Thêm truyện mới</b> để nạp file EPUB/TXT!</div>`;
           return;
         }
 
@@ -508,33 +673,21 @@
       }
     }
 
-    document.getElementById("newBookFile").addEventListener("change", (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      if (!document.getElementById("newBookTitle").value.trim()) {
-        document.getElementById("newBookTitle").value = file.name.replace(/\.txt$/i, "");
-      }
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        document.getElementById("newBookContent").value = ev.target.result;
-      };
-      reader.readAsText(file, "UTF-8");
-    });
-
     async function createAndSaveBook() {
       const title = document.getElementById("newBookTitle").value.trim() || `Truyện ${new Date().toLocaleDateString("vi-VN")}`;
       const rawContent = document.getElementById("newBookContent").value.trim();
-      if (!rawContent) {
-        alert("Vui lòng chọn file .txt hoặc dán nội dung truyện!");
+
+      if (!parsedEpubChapters && !rawContent) {
+        alert("Vui lòng chọn file .epub / .txt hoặc dán nội dung truyện!");
         return;
       }
 
       const btn = document.getElementById("saveBookBtn");
       btn.disabled = true;
-      btn.textContent = "⏳ Đang tách chương & lưu lên Cloud...";
+      btn.textContent = "⏳ Đang lưu truyện lên Cloud...";
 
       try {
-        const chapters = parseChaptersFromText(rawContent, title);
+        const chapters = parsedEpubChapters || parseChaptersFromText(rawContent, title);
         const bookObj = {
           id: "book_" + Date.now(),
           title,
@@ -553,6 +706,7 @@
         if (!resp.ok) throw new Error(resData.error || `HTTP ${resp.status}`);
 
         currentBook = bookObj;
+        parsedEpubChapters = null;
         localStorage.setItem("sr_last_book_id", bookObj.id);
         renderBookReader(0, 0);
         switchTab("reader");
@@ -714,7 +868,6 @@
 
     async function playFromIndex(idx) {
       if (idx < 0 || idx >= chunks.length) {
-        // Tự động chuyển sang chương tiếp theo nếu hết chương hiện tại
         if (currentBook && currentChapterIdx + 1 < currentBook.chapters.length) {
           selectChapter(currentChapterIdx + 1, 0, true);
           return;
@@ -746,7 +899,6 @@
         await audioPlayer.play();
         statusBar.textContent = `🔊 Đang đọc: ${currentBook?.chapters[currentChapterIdx]?.title || ""} (Đoạn ${idx + 1}/${chunks.length})`;
 
-        // Tải ngầm trước 2 đoạn tiếp theo vào RAM để chuyển đoạn không độ trễ
         preloadChunk(idx + 1);
         preloadChunk(idx + 2);
       } catch (err) {
@@ -801,9 +953,6 @@
         .replace(/"/g, "&quot;");
     }
 
-    // =================================================================
-    // KHỞI ĐỘNG ỨNG DỤNG
-    // =================================================================
     (async function bootstrap() {
       initSettings();
       await loadCloudBooks();

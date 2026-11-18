@@ -236,7 +236,7 @@
       </div>
     </div>
 
-    <!-- TAB 3: THÊM TRUYỆN MỚI (HỖ TRỢ CẢ .EPUB VÀ .TXT) -->
+    <!-- TAB 3: THÊM TRUYỆN MỚI (HỖ TRỢ CẢ .EPUB VÀ .TXT, TỰ CHIA GÓI 200 CHƯƠNG) -->
     <div id="viewImport" class="hidden">
       <div class="panel">
         <h3 style="margin: 0 0 12px; font-size: 16px;">➕ Thêm truyện mới (.EPUB / .TXT) & Lưu lên Cloud</h3>
@@ -329,7 +329,7 @@
     const DEFAULT_WORKER_URL = "https://gemini38flash-litetts.tranatrinh.workers.dev";
 
     let currentBook = null;
-    let parsedEpubChapters = null; // Lưu tạm danh sách chương khi giải nén file .epub
+    let parsedEpubChapters = null;
     let currentChapterIdx = 0;
     let chunks = [];
     let currentChunkIdx = 0;
@@ -412,7 +412,6 @@
       const lines = [];
       if (blocks.length > 0) {
         blocks.forEach((b) => {
-          // Bỏ qua thẻ div bao ngoài chứa nhiều thẻ p con để tránh lặp chữ
           if (b.tagName === "DIV" && b.querySelector("p, div, h1, h2, h3")) return;
           const t = b.textContent.replace(/\s+/g, " ").trim();
           if (t) lines.push(t);
@@ -434,7 +433,6 @@
       const arrayBuf = await file.arrayBuffer();
       const zip = await JSZip.loadAsync(arrayBuf);
 
-      // 1. Đọc META-INF/container.xml để tìm đường dẫn file .opf
       const containerFile = zip.file("META-INF/container.xml");
       if (!containerFile) throw new Error("File EPUB không hợp lệ (thiếu container.xml).");
       const containerXml = await containerFile.async("string");
@@ -447,12 +445,10 @@
       const opfXml = await zip.file(opfPath).async("string");
       const opfDoc = parser.parseFromString(opfXml, "application/xml");
 
-      // Lấy tên sách từ metadata
       const bookTitle =
         opfDoc.querySelector("metadata title, dc\\:title")?.textContent?.trim() ||
         file.name.replace(/\.epub$/i, "");
 
-      // 2. Lập bảng manifest (id -> href)
       const manifest = {};
       opfDoc.querySelectorAll("manifest > item").forEach((item) => {
         const id = item.getAttribute("id");
@@ -463,7 +459,6 @@
         }
       });
 
-      // 3. Thử đọc mục lục từ NCX (EPUB 2) để lấy tên chương chuẩn xác
       const tocTitlesByPath = {};
       const ncxItem = Object.values(manifest).find((m) => m.mediaType.includes("ncx") || m.href.endsWith(".ncx"));
       if (ncxItem) {
@@ -483,7 +478,6 @@
         }
       }
 
-      // 4. Duyệt danh sách các file nội dung theo đúng thứ tự spine
       const spineIds = [];
       opfDoc.querySelectorAll("spine > itemref").forEach((ref) => {
         const idref = ref.getAttribute("idref");
@@ -501,7 +495,7 @@
 
         const rawHtml = await zipEntry.async("string");
         const { headingText, text } = extractTextFromHtml(rawHtml);
-        if (text.trim().length < 25) continue; // Bỏ qua trang bìa hoặc trang trống
+        if (text.trim().length < 25) continue;
 
         const chapTitle = tocTitlesByPath[fullPath] || headingText || `Chương ${chapters.length + 1}`;
         chapters.push({ title: chapTitle, content: text.trim() });
@@ -535,7 +529,10 @@
             `Xem trước Chương 1 (${parsed.chapters[0].title}):\n` +
             parsed.chapters[0].content.slice(0, 600) + "...";
 
-          summaryBox.textContent = `✅ Đã giải mã EPUB "${parsed.title}" thành công (${parsed.chapters.length} chương). Bấm "Lưu lên Cloud & Bắt đầu nghe" bên dưới!`;
+          const partsCount = Math.ceil(parsed.chapters.length / 200);
+          summaryBox.textContent = partsCount > 1
+            ? `✅ Đã giải mã EPUB "${parsed.title}" (${parsed.chapters.length} chương). Hệ thống sẽ tự động chia thành ${partsCount} phần (mỗi phần 200 chương) để lưu mượt lên Cloud!`
+            : `✅ Đã giải mã EPUB "${parsed.title}" (${parsed.chapters.length} chương). Bấm "Lưu lên Cloud & Bắt đầu nghe" bên dưới!`;
           summaryBox.classList.remove("hidden");
           statusBar.textContent = `✅ Đã nạp EPUB: ${parsed.chapters.length} chương`;
         } catch (err) {
@@ -673,8 +670,9 @@
       }
     }
 
+    // Tự động chia bộ truyện dài thành từng gói 200 chương (~1MB/gói) để lưu mượt 100%
     async function createAndSaveBook() {
-      const title = document.getElementById("newBookTitle").value.trim() || `Truyện ${new Date().toLocaleDateString("vi-VN")}`;
+      const baseTitle = document.getElementById("newBookTitle").value.trim() || `Truyện ${new Date().toLocaleDateString("vi-VN")}`;
       const rawContent = document.getElementById("newBookContent").value.trim();
 
       if (!parsedEpubChapters && !rawContent) {
@@ -684,33 +682,56 @@
 
       const btn = document.getElementById("saveBookBtn");
       btn.disabled = true;
-      btn.textContent = "⏳ Đang lưu truyện lên Cloud...";
 
       try {
-        const chapters = parsedEpubChapters || parseChaptersFromText(rawContent, title);
-        const bookObj = {
-          id: "book_" + Date.now(),
-          title,
-          chapters,
-          lastChapter: 0,
-          lastChunk: 0,
-          updatedAt: Date.now(),
-        };
+        const allChapters = parsedEpubChapters || parseChaptersFromText(rawContent, baseTitle);
+        const BATCH_SIZE = 200;
+        const totalParts = Math.ceil(allChapters.length / BATCH_SIZE);
+        let firstSavedBook = null;
 
-        const resp = await fetch(`${getWorkerUrl()}/books`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(bookObj),
-        });
-        const resData = await resp.json();
-        if (!resp.ok) throw new Error(resData.error || `HTTP ${resp.status}`);
+        for (let partIdx = 0; partIdx < totalParts; partIdx++) {
+          const start = partIdx * BATCH_SIZE;
+          const end = Math.min(start + BATCH_SIZE, allChapters.length);
+          const partChapters = allChapters.slice(start, end);
 
-        currentBook = bookObj;
+          const partTitle = totalParts > 1
+            ? `${baseTitle} (Phần ${partIdx + 1}/${totalParts}: Ch.${start + 1}-${end})`
+            : baseTitle;
+
+          btn.textContent = totalParts > 1
+            ? `⏳ Đang lưu Phần ${partIdx + 1}/${totalParts} (Ch.${start + 1}-${end})...`
+            : "⏳ Đang lưu truyện lên Cloud...";
+
+          const bookObj = {
+            id: `book_${Date.now()}_p${partIdx + 1}`,
+            title: partTitle,
+            chapters: partChapters,
+            lastChapter: 0,
+            lastChunk: 0,
+            updatedAt: Date.now() - partIdx,
+          };
+
+          const resp = await fetch(`${getWorkerUrl()}/books`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(bookObj),
+          });
+          const resData = await resp.json().catch(() => ({}));
+          if (!resp.ok) {
+            throw new Error(resData.error || `Lỗi ở Phần ${partIdx + 1} (HTTP ${resp.status})`);
+          }
+
+          if (!firstSavedBook) firstSavedBook = bookObj;
+        }
+
+        currentBook = firstSavedBook;
         parsedEpubChapters = null;
-        localStorage.setItem("sr_last_book_id", bookObj.id);
+        localStorage.setItem("sr_last_book_id", firstSavedBook.id);
         renderBookReader(0, 0);
         switchTab("reader");
-        statusBar.textContent = `✅ Đã lưu "${title}" (${chapters.length} chương)`;
+        statusBar.textContent = totalParts > 1
+          ? `✅ Đã lưu "${baseTitle}" thành ${totalParts} phần (${allChapters.length} chương)`
+          : `✅ Đã lưu "${baseTitle}" (${allChapters.length} chương)`;
       } catch (err) {
         alert("Lỗi lưu truyện lên Cloud: " + err.message);
       } finally {
